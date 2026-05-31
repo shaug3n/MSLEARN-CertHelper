@@ -1,0 +1,181 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model StudyGuide {
+  id        String   @id @default(cuid())
+  url       String   @unique
+  title     String
+  examCode  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  objectives       Objective[]
+  sourcePages      SourcePage[]
+  sourceChunks     SourceChunk[]
+  questions        Question[]
+  attempts         Attempt[]
+  remediationPacks RemediationPack[]
+  flashcards       Flashcard[]
+}
+
+model Objective {
+  id        String @id @default(cuid())
+  guideId   String
+  domain    String
+  text      String
+  weightMin Int?
+  weightMax Int?
+
+  guide            StudyGuide        @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  questions        Question[]
+  attemptAnswers   AttemptAnswer[]
+  remediationPacks RemediationPack[]
+  flashcards       Flashcard[]
+
+  @@index([guideId])
+}
+
+model SourcePage {
+  id      String @id @default(cuid())
+  guideId String
+  url     String
+  title   String
+
+  guide  StudyGuide    @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  chunks SourceChunk[]
+
+  @@unique([guideId, url])
+  @@index([guideId])
+}
+
+model SourceChunk {
+  id              String @id @default(cuid())
+  guideId         String
+  sourcePageId    String
+  url             String
+  title           String
+  headingPathJson String
+  content         String
+
+  guide      StudyGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  sourcePage SourcePage @relation(fields: [sourcePageId], references: [id], onDelete: Cascade)
+
+  @@index([guideId])
+  @@index([sourcePageId])
+}
+
+model Question {
+  id             String   @id @default(cuid())
+  guideId        String
+  objectiveId    String
+  type           String
+  prompt         String
+  choicesJson    String?
+  answerJson     String?
+  expectedAnswer String?
+  rubric         String?
+  citationsJson  String
+  difficulty     String
+  points         Float    @default(1)
+  createdAt      DateTime @default(now())
+
+  guide          StudyGuide      @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  objective      Objective       @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  attemptAnswers AttemptAnswer[]
+
+  @@index([guideId])
+  @@index([objectiveId])
+}
+
+model Attempt {
+  id           String   @id @default(cuid())
+  guideId      String
+  overallScore Float
+  createdAt    DateTime @default(now())
+
+  guide   StudyGuide      @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  answers AttemptAnswer[]
+
+  @@index([guideId])
+}
+
+model AttemptAnswer {
+  id          String  @id @default(cuid())
+  attemptId   String
+  questionId  String
+  objectiveId String
+  answerJson  String
+  score       Float
+  maxScore    Float
+  correct     Boolean
+  feedback    String
+
+  attempt   Attempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  objective Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@index([objectiveId])
+}
+
+model RemediationPack {
+  id            String   @id @default(cuid())
+  guideId       String
+  objectiveId   String
+  summary       String
+  lesson        String
+  workedExample String
+  citationsJson String
+  createdAt     DateTime @default(now())
+
+  guide     StudyGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  objective Objective  @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  @@unique([guideId, objectiveId])
+  @@index([guideId])
+}
+
+model Flashcard {
+  id            String   @id @default(cuid())
+  guideId       String
+  objectiveId   String
+  front         String
+  back          String
+  citationsJson String
+  intervalDays  Int      @default(0)
+  easeFactor    Float    @default(2.5)
+  repetitions   Int      @default(0)
+  dueAt         DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  guide     StudyGuide        @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  objective Objective         @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  reviews   FlashcardReview[]
+
+  @@index([guideId])
+  @@index([objectiveId])
+  @@index([dueAt])
+}
+
+model FlashcardReview {
+  id                   String   @id @default(cuid())
+  flashcardId          String
+  rating               String
+  reviewedAt           DateTime @default(now())
+  previousIntervalDays Int
+  nextIntervalDays     Int
+
+  flashcard Flashcard @relation(fields: [flashcardId], references: [id], onDelete: Cascade)
+
+  @@index([flashcardId])
+}
