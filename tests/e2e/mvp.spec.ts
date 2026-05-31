@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-const initialGuide = {
+import type { GuideState } from "../../src/components/study/types";
+
+const initialGuide: GuideState = {
   id: "guide-1",
   url: "https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/gh-900",
   title: "Study guide for Exam GH-900: GitHub Foundations",
@@ -74,7 +76,7 @@ const initialGuide = {
   },
 };
 
-const scoredGuide = {
+const scoredGuide: GuideState = {
   ...initialGuide,
   latestAttempt: {
     id: "attempt-1",
@@ -137,48 +139,61 @@ const scoredGuide = {
 };
 
 test("diagnoses gaps, shows remediation, and reviews a flashcard", async ({ page }) => {
+  let currentGuide: GuideState = initialGuide;
+
   await page.route("**/api/guides", async (route) => {
+    currentGuide = initialGuide;
     await route.fulfill({ json: { guide: initialGuide } });
   });
+  await page.route("**/api/guides/guide-1", async (route) => {
+    await route.fulfill({ json: { guide: currentGuide } });
+  });
   await page.route("**/api/attempts", async (route) => {
+    currentGuide = scoredGuide;
     await route.fulfill({ json: { guide: scoredGuide } });
   });
   await page.route("**/api/flashcards/card-1/review", async (route) => {
+    currentGuide = {
+      ...scoredGuide,
+      flashcards: [
+        {
+          ...scoredGuide.flashcards[0],
+          intervalDays: 1,
+          repetitions: 0,
+          dueAt: "2026-06-01T12:00:00.000Z",
+        },
+      ],
+    };
     await route.fulfill({
       json: {
-        guide: {
-          ...scoredGuide,
-          flashcards: [
-            {
-              ...scoredGuide.flashcards[0],
-              intervalDays: 1,
-              repetitions: 0,
-              dueAt: "2026-06-01T12:00:00.000Z",
-            },
-          ],
-        },
+        guide: currentGuide,
       },
     });
   });
 
   await page.goto("/");
   await page.getByRole("button", { name: "Analyze guide" }).click();
-  await expect(page.getByText("GH-900: Study guide for Exam GH-900")).toBeVisible();
+  await expect(page).toHaveURL(/\/guide\/guide-1\/practice$/);
+  await expect(
+    page.getByRole("heading", { name: "Study guide for Exam GH-900: GitHub Foundations" }),
+  ).toBeVisible();
 
   await page.getByLabel("A correct statement about Describe repositories").check();
   await page.getByRole("button", { name: /Actions/ }).click();
   await page.getByLabel("A billing report").check();
   await page.getByRole("button", { name: "Submit test" }).click();
 
+  await expect(page).toHaveURL(/\/guide\/guide-1\/results$/);
   await expect(page.getByRole("heading", { name: "Practice Test Results" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retake practice test" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Retake practice test" })).toBeVisible();
   await expect(page.getByText("Correct answer", { exact: true })).toBeVisible();
   await expect(page.getByText("A configurable automated process")).toBeVisible();
   await expect(page.getByText("What is a GitHub Actions workflow?")).toBeVisible();
   await expect(page.getByLabel("Practice test score 50%")).toBeVisible();
   await expect(page.getByText("You missed Actions: Describe workflows.")).toBeVisible();
 
-  await page.getByRole("button", { name: "flashcards", exact: true }).click();
+  await page.getByRole("link", { name: "Study flashcards" }).click();
+  await expect(page).toHaveURL(/\/guide\/guide-1\/flashcards$/);
   await page.getByRole("button", { name: "Show answer" }).click();
   await expect(page.getByText("A workflow is a configurable automated process.")).toBeVisible();
   await page.getByRole("button", { name: "Forgot" }).click();
