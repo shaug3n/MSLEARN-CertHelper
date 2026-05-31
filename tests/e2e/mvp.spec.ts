@@ -29,9 +29,9 @@ const initialGuide = {
     {
       id: "q2",
       objectiveId: "obj-2",
-      type: "short_answer",
-      prompt: "Explain what a GitHub Actions workflow is.",
-      choices: null,
+      type: "multiple_choice",
+      prompt: "What is a GitHub Actions workflow?",
+      choices: ["A configurable automated process", "A billing report"],
       citations: [
         {
           url: "https://learn.microsoft.com/en-us/actions",
@@ -133,10 +133,13 @@ test("diagnoses gaps, shows remediation, and reviews a flashcard", async ({ page
   await expect(page.getByText("GH-900: Study guide for Exam GH-900")).toBeVisible();
 
   await page.getByLabel("A correct statement about Describe repositories").check();
-  await page.getByPlaceholder("Type your answer. For command questions, include exact syntax.").fill("not sure");
+  await page.getByLabel("A billing report").check();
   await page.getByRole("button", { name: "Score practice test" }).click();
 
-  await expect(page.getByText("50%")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Practice Test Results" })).toBeVisible();
+  await expect(page.getByText("Retake practice test")).toBeVisible();
+  await expect(page.getByText("What is a GitHub Actions workflow?")).not.toBeVisible();
+  await expect(page.getByLabel("Practice test score 50%")).toBeVisible();
   await expect(page.getByText("You missed Actions: Describe workflows.")).toBeVisible();
 
   await page.getByRole("button", { name: "Show answer" }).click();

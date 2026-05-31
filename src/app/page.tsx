@@ -74,6 +74,7 @@ export default function Home() {
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [showBack, setShowBack] = useState(false);
+  const [testSubmitted, setTestSubmitted] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,6 +100,7 @@ export default function Home() {
     }
     setGuide(payload.guide);
     setAnswers({});
+    setTestSubmitted(false);
     setActiveCardId(payload.guide.flashcards[0]?.id ?? null);
   }
 
@@ -118,6 +120,7 @@ export default function Home() {
       return;
     }
     setGuide(payload.guide);
+    setTestSubmitted(true);
   }
 
   async function reviewCard(rating: "forgot" | "hard" | "easy") {
@@ -186,26 +189,48 @@ export default function Home() {
               <p className="mt-4 text-sm font-medium text-slate-700">{guide.readiness.recommendation}</p>
             </div>
 
-            <div className="rounded-md border border-slate-200 bg-white p-5">
-              <h2 className="text-lg font-semibold">Practice Test</h2>
-              <div className="mt-4 space-y-5">
-                {guide.questions.map((question, index) => (
-                  <QuestionCard
-                    key={question.id}
-                    index={index}
-                    question={question}
-                    value={answers[question.id]}
-                    onChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))}
-                  />
-                ))}
+            {testSubmitted ? (
+              <ResultsSummary
+                guide={guide}
+                onRetake={() => {
+                  setAnswers({});
+                  setTestSubmitted(false);
+                }}
+              />
+            ) : (
+              <div className="rounded-md border border-slate-200 bg-white p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold">Practice Test</h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      50 multiple-choice questions. Choose the best answer for each prompt.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+                    {Object.keys(answers).length}/{guide.questions.length} answered
+                  </span>
+                </div>
+                <div className="mt-4 space-y-5">
+                  {guide.questions.map((question, index) => (
+                    <QuestionCard
+                      key={question.id}
+                      index={index}
+                      question={question}
+                      value={answers[question.id]}
+                      onChange={(value) =>
+                        setAnswers((current) => ({ ...current, [question.id]: value }))
+                      }
+                    />
+                  ))}
+                </div>
+                <button
+                  onClick={submitTest}
+                  className="mt-5 rounded-md bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Score practice test
+                </button>
               </div>
-              <button
-                onClick={submitTest}
-                className="mt-5 rounded-md bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                Score practice test
-              </button>
-            </div>
+            )}
           </section>
 
           <aside className="space-y-6">
@@ -294,7 +319,7 @@ export default function Home() {
         <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <div className="grid gap-4 md:grid-cols-3">
             {[
-              ["Active recall", "Mixed question types force recall instead of passive reading."],
+              ["Active recall", "Multiple-choice diagnostics force recall instead of passive reading."],
               ["Spaced repetition", "Forgot, Hard, and Easy ratings schedule each flashcard."],
               ["Gap analytics", "Every result maps back to exact exam objectives."],
             ].map(([title, copy]) => (
@@ -329,7 +354,7 @@ function QuestionCard({
         <span>{question.difficulty}</span>
       </div>
       <p className="mt-2 font-medium">{question.prompt}</p>
-      {question.type === "multiple_choice" && question.choices ? (
+      {question.choices ? (
         <div className="mt-3 space-y-2">
           {question.choices.map((choice) => (
             <label key={choice} className="flex gap-2 rounded border border-slate-200 p-2 text-sm">
@@ -343,22 +368,80 @@ function QuestionCard({
             </label>
           ))}
         </div>
-      ) : question.type === "ordering" && question.choices ? (
-        <textarea
-          className="mt-3 min-h-24 w-full rounded-md border border-slate-300 p-3 text-sm"
-          placeholder="Enter the steps in order, one per line."
-          value={Array.isArray(value) ? value.join("\n") : ""}
-          onChange={(event) => onChange(event.target.value.split("\n").filter(Boolean))}
-        />
       ) : (
-        <textarea
-          className="mt-3 min-h-24 w-full rounded-md border border-slate-300 p-3 text-sm"
-          placeholder="Type your answer. For command questions, include exact syntax."
-          value={typeof value === "string" ? value : ""}
-          onChange={(event) => onChange(event.target.value)}
-        />
+        <p className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-800">
+          This question is missing answer choices. Regenerate the assessment.
+        </p>
       )}
       <CitationList citations={question.citations} />
+    </div>
+  );
+}
+
+function ResultsSummary({
+  guide,
+  onRetake,
+}: {
+  guide: GuideState;
+  onRetake: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold">Practice Test Results</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Questions are hidden after submission so the next action is review, not answer tweaking.
+          </p>
+        </div>
+        <div
+          className="rounded-md bg-blue-700 px-5 py-4 text-center text-white"
+          aria-label={`Practice test score ${guide.readiness.overallScore}%`}
+        >
+          <div className="text-3xl font-semibold">{guide.readiness.overallScore}%</div>
+          <div className="text-xs font-semibold uppercase">overall</div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="rounded-md bg-slate-50 p-4">
+          <h3 className="text-sm font-semibold uppercase text-slate-500">Domain Scores</h3>
+          <div className="mt-3 space-y-3">
+            {guide.readiness.domains.map((domain) => (
+              <div key={domain.domain}>
+                <div className="flex justify-between text-sm">
+                  <span>{domain.domain}</span>
+                  <span>{domain.score}%</span>
+                </div>
+                <div className="mt-1 h-2 rounded bg-white">
+                  <div className="h-2 rounded bg-blue-700" style={{ width: `${domain.score}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-md bg-red-50 p-4">
+          <h3 className="text-sm font-semibold uppercase text-red-700">Priority Gaps</h3>
+          <ul className="mt-3 space-y-2 text-sm text-red-950">
+            {guide.readiness.weakObjectives.slice(0, 5).map((objective) => (
+              <li key={objective.objectiveId}>
+                {objective.domain}: {objective.objective} ({objective.score}%)
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <p className="mt-5 rounded-md bg-blue-50 p-4 text-sm font-medium text-blue-950">
+        {guide.readiness.recommendation}
+      </p>
+      <button
+        onClick={onRetake}
+        className="mt-5 rounded-md border border-slate-300 px-5 py-3 text-sm font-semibold hover:bg-slate-50"
+      >
+        Retake practice test
+      </button>
     </div>
   );
 }

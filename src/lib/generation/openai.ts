@@ -2,12 +2,17 @@ import type { ObjectiveWithId } from "@/lib/analytics/readiness";
 import type { SourceChunk } from "@/lib/types";
 import { z } from "zod";
 
-import { buildMockAssessment } from "./mock";
+import { ASSESSMENT_QUESTION_COUNT, buildMockAssessment } from "./mock";
 import {
   CitationSchema,
   GeneratedAssessmentSchema,
   type GeneratedAssessment,
 } from "./schemas";
+
+export { ASSESSMENT_QUESTION_COUNT } from "./mock";
+
+export const OPENAI_ASSESSMENT_SYSTEM_PROMPT =
+  "Generate Microsoft certification practice content. Create exactly 50 multiple-choice practice test questions. Every question must map to one objectiveId and include at least one citation from the provided source chunks. Each question must have four plausible answer choices, exactly one correct answer, and no true/false questions. Also create flashcards for spaced repetition.";
 
 export async function generateAssessment(
   objectives: ObjectiveWithId[],
@@ -23,37 +28,7 @@ export async function generateAssessment(
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
-      input: [
-        {
-          role: "system",
-          content:
-            "Generate Microsoft certification practice content. Every question and flashcard must map to one objectiveId and include at least one citation from the provided source chunks.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            objectives,
-            sourceChunks: chunks.slice(0, 40),
-            requiredQuestionTypes: [
-              "multiple_choice",
-              "short_answer",
-              "code",
-              "ordering",
-            ],
-          }),
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "generated_assessment",
-          strict: true,
-          schema: buildOpenAiResponseSchema(),
-        },
-      },
-    }),
+    body: JSON.stringify(buildOpenAiRequestPayload(objectives, chunks)),
   });
 
   if (!response.ok) {
@@ -117,6 +92,40 @@ export function normalizeOpenAiAssessment(payload: unknown): GeneratedAssessment
   });
 }
 
+export function buildOpenAiRequestPayload(
+  objectives: ObjectiveWithId[],
+  chunks: SourceChunk[],
+) {
+  return {
+    model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+    input: [
+      {
+        role: "system",
+        content: OPENAI_ASSESSMENT_SYSTEM_PROMPT,
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          questionCount: ASSESSMENT_QUESTION_COUNT,
+          objectives,
+          sourceChunks: chunks.slice(0, 40),
+          requiredQuestionTypes: ["multiple_choice"],
+          distribution:
+            "Spread questions across all objectives. If there are fewer than 50 objectives, create multiple distinct questions per objective.",
+        }),
+      },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "generated_assessment",
+        strict: true,
+        schema: buildOpenAiResponseSchema(),
+      },
+    },
+  };
+}
+
 export function buildOpenAiResponseSchema() {
   return {
     type: "object",
@@ -125,7 +134,8 @@ export function buildOpenAiResponseSchema() {
     properties: {
       questions: {
         type: "array",
-        minItems: 1,
+        minItems: ASSESSMENT_QUESTION_COUNT,
+        maxItems: ASSESSMENT_QUESTION_COUNT,
         items: {
           type: "object",
           additionalProperties: false,
@@ -142,7 +152,7 @@ export function buildOpenAiResponseSchema() {
             "difficulty",
           ],
           properties: {
-            type: { enum: ["multiple_choice", "short_answer", "code", "ordering"] },
+            type: { enum: ["multiple_choice"] },
             objectiveId: { type: "string" },
             prompt: { type: "string" },
             choices: { type: "array", items: { type: "string" } },
@@ -191,7 +201,7 @@ function citationsSchema() {
 }
 
 const OpenAiQuestionSchema = z.object({
-  type: z.enum(["multiple_choice", "short_answer", "code", "ordering"]),
+  type: z.enum(["multiple_choice"]),
   objectiveId: z.string().min(1),
   prompt: z.string().min(1),
   choices: z.array(z.string()),

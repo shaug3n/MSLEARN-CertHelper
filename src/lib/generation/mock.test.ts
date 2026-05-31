@@ -29,13 +29,11 @@ const chunks: SourceChunk[] = [
 ];
 
 describe("buildMockAssessment", () => {
-  it("creates mixed cited questions and flashcards for objectives", () => {
+  it("creates 50 cited multiple-choice questions and flashcards for objectives", () => {
     const assessment = buildMockAssessment(objectives, chunks);
 
-    expect(assessment.questions.map((question) => question.type)).toEqual([
-      "multiple_choice",
-      "short_answer",
-    ]);
+    expect(assessment.questions).toHaveLength(50);
+    expect(assessment.questions.every((question) => question.type === "multiple_choice")).toBe(true);
     expect(assessment.questions.every((question) => question.citations.length > 0)).toBe(true);
     expect(assessment.flashcards).toHaveLength(2);
     expect(assessment.flashcards[0].front).toContain("Describe repositories");

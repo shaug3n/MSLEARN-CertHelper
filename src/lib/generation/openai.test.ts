@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildOpenAiResponseSchema, normalizeOpenAiAssessment } from "./openai";
+import {
+  ASSESSMENT_QUESTION_COUNT,
+  OPENAI_ASSESSMENT_SYSTEM_PROMPT,
+  buildOpenAiRequestPayload,
+  buildOpenAiResponseSchema,
+  normalizeOpenAiAssessment,
+} from "./openai";
 
 describe("buildOpenAiResponseSchema", () => {
   it("does not use unsupported composition keywords in question items", () => {
@@ -10,6 +16,24 @@ describe("buildOpenAiResponseSchema", () => {
     expect(schemaJson).not.toContain('"anyOf"');
     expect(schemaJson).not.toContain('"allOf"');
   });
+
+  it("restricts generated assessment questions to multiple choice", () => {
+    const questions = buildOpenAiResponseSchema().properties.questions;
+
+    expect(questions.minItems).toBe(ASSESSMENT_QUESTION_COUNT);
+    expect(questions.maxItems).toBe(ASSESSMENT_QUESTION_COUNT);
+    expect(questions.items.properties.type).toEqual({ enum: ["multiple_choice"] });
+  });
+});
+
+describe("buildOpenAiRequestPayload", () => {
+  it("stores the assessment prompt and requests exactly 50 multiple-choice questions", () => {
+    const payload = buildOpenAiRequestPayload([], []);
+
+    expect(OPENAI_ASSESSMENT_SYSTEM_PROMPT).toContain("multiple-choice");
+    expect(payload.input[1].content).toContain(`"questionCount":${ASSESSMENT_QUESTION_COUNT}`);
+    expect(payload.input[1].content).toContain('"requiredQuestionTypes":["multiple_choice"]');
+  });
 });
 
 describe("normalizeOpenAiAssessment", () => {
@@ -17,12 +41,12 @@ describe("normalizeOpenAiAssessment", () => {
     const assessment = normalizeOpenAiAssessment({
       questions: [
         {
-          type: "ordering",
+          type: "multiple_choice",
           objectiveId: "obj-1",
-          prompt: "Order the GitHub flow steps.",
-          choices: ["Create branch", "Open pull request"],
-          answer: "",
-          orderedAnswer: ["Create branch", "Open pull request"],
+          prompt: "What is GitHub flow?",
+          choices: ["A branch and pull request workflow", "A billing dashboard"],
+          answer: "A branch and pull request workflow",
+          orderedAnswer: [],
           expectedAnswer: "",
           rubric: "",
           citations: [
@@ -52,11 +76,11 @@ describe("normalizeOpenAiAssessment", () => {
     });
 
     expect(assessment.questions[0]).toEqual({
-      type: "ordering",
+      type: "multiple_choice",
       objectiveId: "obj-1",
-      prompt: "Order the GitHub flow steps.",
-      choices: ["Create branch", "Open pull request"],
-      answer: ["Create branch", "Open pull request"],
+      prompt: "What is GitHub flow?",
+      choices: ["A branch and pull request workflow", "A billing dashboard"],
+      answer: "A branch and pull request workflow",
       citations: [
         {
           url: "https://learn.microsoft.com/en-us/training/",

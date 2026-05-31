@@ -3,6 +3,8 @@ import type { Citation, GeneratedFlashcard, SourceChunk } from "@/lib/types";
 
 import type { GeneratedAssessment } from "./schemas";
 
+export const ASSESSMENT_QUESTION_COUNT = 50;
+
 export type RemediationPackInput = {
   objectiveId: string;
   domain: string;
@@ -22,56 +24,26 @@ export function buildMockAssessment(
   objectives: ObjectiveWithId[],
   chunks: SourceChunk[],
 ): GeneratedAssessment {
-  const safeObjectives = objectives.slice(0, 8);
-  const questions: GeneratedAssessment["questions"] = safeObjectives.map((objective, index) => {
+  const safeObjectives = objectives;
+  const questions: GeneratedAssessment["questions"] = Array.from({
+    length: ASSESSMENT_QUESTION_COUNT,
+  }).map((_, index) => {
+    const objective = safeObjectives[index % safeObjectives.length];
     const citation = pickCitation(chunks, index);
-    const base = {
-      objectiveId: objective.id,
-      prompt: promptFor(objective.objective),
-      citations: [citation],
-      difficulty: index % 3 === 0 ? "easy" : index % 3 === 1 ? "medium" : "hard",
-    } satisfies Pick<
-      GeneratedAssessment["questions"][number],
-      "objectiveId" | "prompt" | "citations" | "difficulty"
-    >;
-
-    if (index % 4 === 0) {
-      return {
-        ...base,
-        type: "multiple_choice",
-        choices: [
-          `A correct statement about ${objective.objective}`,
-          "An unrelated Microsoft licensing detail",
-          "A deprecated service behavior",
-          "A security setting that is not mentioned",
-        ],
-        answer: `A correct statement about ${objective.objective}`,
-      };
-    }
-
-    if (index % 4 === 1) {
-      return {
-        ...base,
-        type: "short_answer",
-        expectedAnswer: `Explain ${objective.objective} using the cited Microsoft Learn source.`,
-        rubric: "Full credit requires a correct definition plus one concrete scenario.",
-      };
-    }
-
-    if (index % 4 === 2) {
-      return {
-        ...base,
-        type: "code",
-        expectedAnswer: "Use the exact command or configuration shape from the cited source.",
-        rubric: "Full credit requires correct syntax and correct purpose.",
-      };
-    }
 
     return {
-      ...base,
-      type: "ordering",
-      choices: ["Identify the requirement", "Choose the matching feature", "Validate the outcome"],
-      answer: ["Identify the requirement", "Choose the matching feature", "Validate the outcome"],
+      objectiveId: objective.id,
+      prompt: promptFor(objective.objective, index),
+      citations: [citation],
+      difficulty: index % 3 === 0 ? "easy" : index % 3 === 1 ? "medium" : "hard",
+      type: "multiple_choice",
+      choices: [
+        `A correct statement about ${objective.objective}`,
+        "An unrelated Microsoft licensing detail",
+        "A deprecated service behavior",
+        "A security setting that is not mentioned",
+      ],
+      answer: `A correct statement about ${objective.objective}`,
     };
   });
 
@@ -100,8 +72,8 @@ export function buildRemediationPacks(
   }));
 }
 
-function promptFor(objective: string): string {
-  return `Which answer best demonstrates this objective: ${objective}?`;
+function promptFor(objective: string, index: number): string {
+  return `Question ${index + 1}: Which answer best demonstrates this objective: ${objective}?`;
 }
 
 function pickCitation(chunks: SourceChunk[], index: number): Citation {
