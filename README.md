@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MS Certification Helper
 
-## Getting Started
+Local-first MVP for turning Microsoft Learn certification study guides into practice tests, gap analysis, remediation packs, and SRS flashcards.
 
-First, run the development server:
+## Setup
 
 ```bash
+npm install
+copy .env.example .env
+npm run setup
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000` and analyze a Microsoft Learn study-guide URL such as:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/gh-900
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+`OPENAI_API_KEY` is optional. Without it, the app uses deterministic mocked generation so ingestion, scoring, dashboard, remediation, and SRS can be exercised locally. With a key, the generation adapter calls OpenAI structured outputs and validates citations/objective mappings before storing content.
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+- `npm run dev` - start Next.js locally.
+- `npm run setup` - generate Prisma client and apply SQLite migrations.
+- `npm test` - run unit/contract tests.
+- `npm run test:e2e` - run the Playwright happy-path UI test.
+- `npm run lint` - run ESLint.
+- `npm run build` - production build.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## MVP Scope
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Microsoft Learn study-guide ingestion with linked source chunks and citation metadata.
+- Mixed practice questions: multiple choice, short answer, code/command entry, and ordered steps.
+- Objective-level readiness analytics and weak-objective recommendations.
+- Generated remediation packs with cited source links.
+- Markdown/code flashcards with SM-2 style `Forgot`, `Hard`, and `Easy` scheduling.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Deferred: user accounts, hosted database, image occlusion, and multi-step scenario diagnostic trees.
