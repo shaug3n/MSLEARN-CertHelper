@@ -42,6 +42,7 @@ const initialGuide = {
       difficulty: "medium",
     },
   ],
+  latestAttempt: null,
   remediationPacks: [],
   flashcards: [
     {
@@ -75,6 +76,38 @@ const initialGuide = {
 
 const scoredGuide = {
   ...initialGuide,
+  latestAttempt: {
+    id: "attempt-1",
+    overallScore: 50,
+    answers: [
+      {
+        questionId: "q1",
+        objectiveId: "obj-1",
+        prompt: "Which answer best demonstrates this objective: Describe repositories?",
+        choices: ["A correct statement about Describe repositories", "A billing detail"],
+        selectedAnswer: "A correct statement about Describe repositories",
+        correctAnswer: "A correct statement about Describe repositories",
+        correct: true,
+        feedback: "Correct.",
+        citations: initialGuide.questions[0].citations,
+        score: 1,
+        maxScore: 1,
+      },
+      {
+        questionId: "q2",
+        objectiveId: "obj-2",
+        prompt: "What is a GitHub Actions workflow?",
+        choices: ["A configurable automated process", "A billing report"],
+        selectedAnswer: "A billing report",
+        correctAnswer: "A configurable automated process",
+        correct: false,
+        feedback: "Review the cited source and try again.",
+        citations: initialGuide.questions[1].citations,
+        score: 0,
+        maxScore: 1,
+      },
+    ],
+  },
   remediationPacks: [
     {
       id: "pack-1",
@@ -133,17 +166,21 @@ test("diagnoses gaps, shows remediation, and reviews a flashcard", async ({ page
   await expect(page.getByText("GH-900: Study guide for Exam GH-900")).toBeVisible();
 
   await page.getByLabel("A correct statement about Describe repositories").check();
+  await page.getByRole("button", { name: /Actions/ }).click();
   await page.getByLabel("A billing report").check();
-  await page.getByRole("button", { name: "Score practice test" }).click();
+  await page.getByRole("button", { name: "Submit test" }).click();
 
   await expect(page.getByRole("heading", { name: "Practice Test Results" })).toBeVisible();
-  await expect(page.getByText("Retake practice test")).toBeVisible();
-  await expect(page.getByText("What is a GitHub Actions workflow?")).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Retake practice test" })).toBeVisible();
+  await expect(page.getByText("Correct answer", { exact: true })).toBeVisible();
+  await expect(page.getByText("A configurable automated process")).toBeVisible();
+  await expect(page.getByText("What is a GitHub Actions workflow?")).toBeVisible();
   await expect(page.getByLabel("Practice test score 50%")).toBeVisible();
   await expect(page.getByText("You missed Actions: Describe workflows.")).toBeVisible();
 
+  await page.getByRole("button", { name: "flashcards", exact: true }).click();
   await page.getByRole("button", { name: "Show answer" }).click();
   await expect(page.getByText("A workflow is a configurable automated process.")).toBeVisible();
   await page.getByRole("button", { name: "Forgot" }).click();
-  await expect(page.getByText("interval 1 days")).toBeVisible();
+  await expect(page.getByLabel("Active flashcard interval 1 days")).toBeAttached();
 });

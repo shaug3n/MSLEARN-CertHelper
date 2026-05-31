@@ -1,6 +1,7 @@
 import { calculateReadiness, type ObjectiveWithId } from "@/lib/analytics/readiness";
 import { gradeDeterministicQuestion } from "@/lib/assessment/grading";
 import { prisma } from "@/lib/db";
+import { balanceMultipleChoiceAnswerPositions } from "@/lib/generation/choices";
 import { generateAssessment } from "@/lib/generation/openai";
 import { buildRemediationPacks } from "@/lib/generation/mock";
 import { chunkSourcePage, parseStudyGuideHtml } from "@/lib/ingestion/parser";
@@ -71,8 +72,9 @@ export async function analyzeStudyGuide(url: string, fetchHtml = fetchHtmlFromWe
   }
 
   const assessment = await generateAssessment(objectiveInputs, storedChunks);
+  const balancedQuestions = balanceMultipleChoiceAnswerPositions(assessment.questions);
   await prisma.question.createMany({
-    data: assessment.questions.map((question) => ({
+    data: balancedQuestions.map((question) => ({
       guideId: guide.id,
       objectiveId: question.objectiveId,
       type: question.type,
@@ -124,6 +126,9 @@ export async function getGuideState(guideId: string) {
     weightMax: objective.weightMax ?? undefined,
   }));
   const latestAnswers = guide.attempts[0]?.answers ?? [];
+  const answersByQuestionId = new Map(
+    latestAnswers.map((answer) => [answer.questionId, answer]),
+  );
   const readiness = calculateReadiness(
     objectives,
     latestAnswers.map((answer) => ({
@@ -149,6 +154,28 @@ export async function getGuideState(guideId: string) {
       citations: parseJson<Citation[]>(question.citationsJson, []),
       difficulty: question.difficulty,
     })),
+    latestAttempt: guide.attempts[0]
+      ? {
+          id: guide.attempts[0].id,
+          overallScore: guide.attempts[0].overallScore,
+          answers: guide.questions.map((question) => {
+            const answer = answersByQuestionId.get(question.id);
+            return {
+              questionId: question.id,
+              objectiveId: question.objectiveId,
+              prompt: question.prompt,
+              choices: parseJson<string[] | null>(question.choicesJson, null),
+              selectedAnswer: parseJson<string | string[]>(answer?.answerJson, ""),
+              correctAnswer: parseJson<string | string[]>(question.answerJson, ""),
+              correct: answer?.correct ?? false,
+              feedback: answer?.feedback ?? "Question was not answered.",
+              citations: parseJson<Citation[]>(question.citationsJson, []),
+              score: answer?.score ?? 0,
+              maxScore: answer?.maxScore ?? question.points,
+            };
+          }),
+        }
+      : null,
     remediationPacks: guide.remediationPacks.map((pack) => ({
       id: pack.id,
       objectiveId: pack.objectiveId,
