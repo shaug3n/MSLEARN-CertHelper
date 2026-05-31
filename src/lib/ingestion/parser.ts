@@ -18,7 +18,9 @@ export function parseStudyGuideHtml(url: string, html: string): ParsedStudyGuide
     if (tag !== "h3") return;
 
     const heading = cleanText($(element).text());
-    const weighted = heading.match(/^(.*?)\s*\((\d+)-(\d+)%\)$/);
+    if (/skills at a glance/i.test(heading)) return;
+
+    const weighted = heading.match(/^(.*?)\s*\((\d+)[-–](\d+)%\)$/);
     const domain = cleanText(weighted?.[1] ?? heading);
     const weightMin = weighted ? Number(weighted[2]) : undefined;
     const weightMax = weighted ? Number(weighted[3]) : undefined;

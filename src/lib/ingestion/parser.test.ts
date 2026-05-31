@@ -24,6 +24,20 @@ const guideHtml = `
   </html>
 `;
 
+const guideHtmlWithSummary = `
+  <main>
+    <h1>Study guide for Exam GH-900: GitHub Foundations</h1>
+    <h3>Skills at a glance as of January 2026</h3>
+    <ul>
+      <li>Understand Git and GitHub basics (25–30%)</li>
+    </ul>
+    <h3>Understand Git and GitHub basics (25–30%)</h3>
+    <ul>
+      <li>Describe the purpose and benefits of version control</li>
+    </ul>
+  </main>
+`;
+
 const sourceHtml = `
   <html>
     <head><title>Understanding GitHub Actions</title></head>
@@ -73,6 +87,22 @@ describe("parseStudyGuideHtml", () => {
       {
         title: "GitHub Actions docs",
         url: "https://learn.microsoft.com/en-us/actions/learn-github-actions/understanding-github-actions",
+      },
+    ]);
+  });
+
+  it("skips skills-at-a-glance summary bullets and parses en-dash weights", () => {
+    const guide = parseStudyGuideHtml(
+      "https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/gh-900",
+      guideHtmlWithSummary,
+    );
+
+    expect(guide.objectives).toEqual([
+      {
+        domain: "Understand Git and GitHub basics",
+        objective: "Describe the purpose and benefits of version control",
+        weightMin: 25,
+        weightMax: 30,
       },
     ]);
   });
