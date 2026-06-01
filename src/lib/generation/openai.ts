@@ -41,15 +41,25 @@ export async function generateAssessment(
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("OpenAI generation timed out before the assessment could be created.");
+      console.error("OpenAI generation timed out; falling back to deterministic assessment.");
+      return buildMockAssessment(objectives, chunks);
     }
-    throw error;
+    console.error("OpenAI request failed; falling back to deterministic assessment.", error);
+    return buildMockAssessment(objectives, chunks);
   } finally {
     clearTimeout(timeout);
   }
 
   if (!response.ok) {
-    throw new Error(`OpenAI generation failed: ${response.status} ${await response.text()}`);
+    const responseText = await response.text();
+    if (response.status >= 500 || response.status === 429) {
+      console.error(
+        `OpenAI generation returned ${response.status}; falling back to deterministic assessment.`,
+        responseText,
+      );
+      return buildMockAssessment(objectives, chunks);
+    }
+    throw new Error(`OpenAI generation failed: ${response.status} ${responseText}`);
   }
 
   const payload = (await response.json()) as {
@@ -61,10 +71,16 @@ export async function generateAssessment(
     payload.output?.flatMap((item) => item.content ?? []).find((item) => item.text)?.text;
 
   if (!text) {
-    throw new Error("OpenAI response did not contain structured output text.");
+    console.error("OpenAI response did not include structured output text; using fallback.");
+    return buildMockAssessment(objectives, chunks);
   }
 
-  return normalizeOpenAiAssessment(JSON.parse(text));
+  try {
+    return normalizeOpenAiAssessment(JSON.parse(text));
+  } catch (error) {
+    console.error("OpenAI response could not be normalized; using fallback.", error);
+    return buildMockAssessment(objectives, chunks);
+  }
 }
 
 export function normalizeOpenAiAssessment(payload: unknown): GeneratedAssessment {
