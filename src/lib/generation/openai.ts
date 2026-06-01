@@ -1,4 +1,5 @@
 import type { ObjectiveWithId } from "@/lib/analytics/readiness";
+import { rankSourceChunksForObjectives } from "@/lib/ingestion/source-ranking";
 import type { SourceChunk } from "@/lib/types";
 import { z } from "zod";
 
@@ -32,7 +33,7 @@ export async function generateAssessment(
     return buildMockAssessment(objectives, chunks);
   }
 
-  const sourceChunks = compactSourceChunks(chunks);
+  const sourceChunks = compactSourceChunks(selectChunksForOpenAi(objectives, chunks));
   const response = await sendOpenAiRequest(buildOpenAiRequestPayload(objectives, chunks));
   if (!response) return buildMockAssessment(objectives, chunks);
 
@@ -58,7 +59,7 @@ export async function generateFlashcards(
     return buildMockFlashcards(objectives, chunks);
   }
 
-  const sourceChunks = compactSourceChunks(chunks);
+  const sourceChunks = compactSourceChunks(selectChunksForOpenAi(objectives, chunks));
   const response = await sendOpenAiRequest(
     buildOpenAiFlashcardRequestPayload(objectives, chunks),
   );
@@ -107,7 +108,7 @@ export function buildOpenAiRequestPayload(
   objectives: ObjectiveWithId[],
   chunks: SourceChunk[],
 ) {
-  const sourceChunks = compactSourceChunks(chunks);
+  const sourceChunks = compactSourceChunks(selectChunksForOpenAi(objectives, chunks));
   return {
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
     max_output_tokens: MAX_OPENAI_OUTPUT_TOKENS,
@@ -143,7 +144,7 @@ export function buildOpenAiFlashcardRequestPayload(
   objectives: ObjectiveWithId[],
   chunks: SourceChunk[],
 ) {
-  const sourceChunks = compactSourceChunks(chunks);
+  const sourceChunks = compactSourceChunks(selectChunksForOpenAi(objectives, chunks));
   return {
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
     max_output_tokens: 4000,
@@ -178,6 +179,13 @@ function compactSourceChunks(chunks: SourceChunk[]) {
     ...chunk,
     content: chunk.content.slice(0, MAX_SOURCE_CHUNK_CONTENT_LENGTH).trim(),
   }));
+}
+
+function selectChunksForOpenAi(objectives: ObjectiveWithId[], chunks: SourceChunk[]) {
+  return rankSourceChunksForObjectives(objectives, chunks, {
+    maxChunks: MAX_SOURCE_CHUNKS_FOR_OPENAI,
+    chunksPerObjective: 3,
+  });
 }
 
 type CompactSourceChunk = {

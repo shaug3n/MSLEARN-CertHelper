@@ -66,6 +66,36 @@ describe("buildOpenAiRequestPayload", () => {
     expect(userInput).not.toContain('"url":"https://learn.microsoft.com/24"');
   });
 
+  it("selects ranked source chunks before building the OpenAI payload", () => {
+    const payload = buildOpenAiRequestPayload(
+      [
+        {
+          id: "obj-actions",
+          domain: "Automation and AI tools",
+          objective: "Describe GitHub Actions workflows",
+        },
+      ],
+      [
+        {
+          url: "https://learn.microsoft.com/en-us/training/modules/github-codespaces/",
+          title: "GitHub Codespaces",
+          headingPath: ["Codespaces"],
+          content: "Codespaces creates cloud-hosted development environments.",
+        },
+        {
+          url: "https://docs.github.com/en/actions",
+          title: "GitHub Actions",
+          headingPath: ["GitHub Actions", "Workflows"],
+          content: "GitHub Actions workflows automate build, test, and deployment.",
+        },
+      ],
+    );
+
+    const sourceChunks = JSON.parse(payload.input[1].content).sourceChunks;
+
+    expect(sourceChunks[0].url).toBe("https://docs.github.com/en/actions");
+  });
+
   it("builds a separate flashcard payload for on-demand study generation", () => {
     const payload = buildOpenAiFlashcardRequestPayload(
       [{ id: "obj-1", domain: "Actions", objective: "Describe workflows" }],

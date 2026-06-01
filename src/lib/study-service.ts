@@ -4,12 +4,20 @@ import { prisma } from "@/lib/db";
 import { balanceMultipleChoiceAnswerPositions } from "@/lib/generation/choices";
 import { generateAssessment, generateFlashcards } from "@/lib/generation/openai";
 import { buildRemediationPacks } from "@/lib/generation/mock";
-import { chunkSourcePage, parseStudyGuideHtml } from "@/lib/ingestion/parser";
+import { chunkSourcePage, parseLearningPathModuleLinks, parseStudyGuideHtml } from "@/lib/ingestion/parser";
+import {
+  buildInitialSourceLinks,
+  getSourceCoverage,
+  type SourceLink,
+} from "@/lib/ingestion/source-discovery";
 import { parseJson, stringifyJson } from "@/lib/json";
 import { reviewFlashcard, type ReviewRating } from "@/lib/srs/sm2";
 import type { Citation, GradedResult, SourceChunk } from "@/lib/types";
 
-const MAX_LINKED_PAGES = 6;
+const MAX_LEARN_PATHS = 4;
+const MAX_LEARN_MODULES = 24;
+const MAX_LEARN_DOCS = 10;
+const MAX_EXTERNAL_DOCS = 12;
 const SOURCE_FETCH_TIMEOUT_MS = 12_000;
 
 type FetchHtml = (url: string) => Promise<string>;
@@ -24,10 +32,7 @@ export async function analyzeStudyGuide(
   assertLearnUrl(url);
   const guideHtml = await fetchHtml(url);
   const parsed = parseStudyGuideHtml(url, guideHtml);
-  const sourcePages = await loadSourcePages(parsed.links, fetchHtml);
-  if (sourcePages.length === 0) {
-    sourcePages.push({ url, title: parsed.title, chunks: chunkSourcePage(url, guideHtml) });
-  }
+  const sourcePages = await loadSourcePages(url, parsed.title, guideHtml, parsed.links, fetchHtml);
 
   await prisma.studyGuide.deleteMany({ where: { userId, url } });
 
@@ -102,6 +107,7 @@ export async function getGuideState(userId: string, guideId: string) {
     where: { id: guideId, userId },
     include: {
       objectives: true,
+      sourcePages: true,
       sourceChunks: true,
       questions: true,
       remediationPacks: true,
@@ -141,6 +147,7 @@ export async function getGuideState(userId: string, guideId: string) {
     examCode: guide.examCode,
     objectives,
     sourceChunkCount: guide.sourceChunks.length,
+    sourceCoverage: getSourceCoverage(guide.sourcePages.map((page) => page.url)),
     questions: guide.questions.map((question) => ({
       id: question.id,
       objectiveId: question.objectiveId,
@@ -344,25 +351,94 @@ export async function generateGuideFlashcards(userId: string, guideId: string) {
 }
 
 async function loadSourcePages(
+  guideUrl: string,
+  guideTitle: string,
+  guideHtml: string,
   links: Array<{ title: string; url: string }>,
   fetchHtml: FetchHtml,
 ) {
+  const sourceLinks = buildInitialSourceLinks(guideUrl, guideTitle, links);
+  const guidePage = {
+    title: guideTitle,
+    url: guideUrl,
+    chunks: chunkSourcePage(guideUrl, guideHtml),
+  };
+  const fetchedUrls = new Set([guideUrl]);
+
+  const learnPaths = sourceLinks
+    .filter((link) => link.sourceType === "learn-path")
+    .slice(0, MAX_LEARN_PATHS);
+  const learnDocs = sourceLinks
+    .filter((link) => link.sourceType === "learn-doc")
+    .slice(0, MAX_LEARN_DOCS);
+  const externalDocs = sourceLinks
+    .filter((link) => link.sourceType === "external-doc")
+    .slice(0, MAX_EXTERNAL_DOCS);
+
+  const pathPages = await fetchSourcePages(learnPaths, fetchHtml, fetchedUrls);
+  const moduleLinks = pathPages
+    .flatMap((page) =>
+      parseLearningPathModuleLinks(page.url, page.html).map((link) => ({
+        ...link,
+        sourceType: "learn-module" as const,
+      })),
+    )
+    .filter(uniqueByUrl)
+    .slice(0, MAX_LEARN_MODULES);
+  const modulePages = await fetchSourcePages(moduleLinks, fetchHtml, fetchedUrls);
+  const learnDocPages = await fetchSourcePages(learnDocs, fetchHtml, fetchedUrls);
+  const externalDocPages = await fetchSourcePages(externalDocs, fetchHtml, fetchedUrls);
+
+  return [
+    guidePage,
+    ...pathPages.map(stripHtml),
+    ...modulePages.map(stripHtml),
+    ...learnDocPages.map(stripHtml),
+    ...externalDocPages.map(stripHtml),
+  ].filter((page) => page.chunks.length > 0);
+}
+
+async function fetchSourcePages(
+  links: SourceLink[],
+  fetchHtml: FetchHtml,
+  fetchedUrls: Set<string>,
+) {
+  const uniqueLinks = links.filter((link) => {
+    if (fetchedUrls.has(link.url)) return false;
+    fetchedUrls.add(link.url);
+    return true;
+  });
+
   const results = await Promise.all(
-    links.slice(0, MAX_LINKED_PAGES).map(async (link) => {
+    uniqueLinks.map(async (link) => {
       try {
         const html = await fetchHtml(link.url);
         const chunks = chunkSourcePage(link.url, html);
         if (chunks.length === 0) return null;
-        return { title: chunks[0].title || link.title, url: link.url, chunks };
+        return {
+          title: chunks[0].title || link.title,
+          url: link.url,
+          chunks,
+          html,
+        };
       } catch {
         return null;
       }
     }),
   );
 
-  return results.filter((page): page is { title: string; url: string; chunks: SourceChunk[] } =>
-    Boolean(page),
+  return results.filter(
+    (page): page is { title: string; url: string; chunks: SourceChunk[]; html: string } =>
+      Boolean(page),
   );
+}
+
+function stripHtml(page: { title: string; url: string; chunks: SourceChunk[] }) {
+  return { title: page.title, url: page.url, chunks: page.chunks };
+}
+
+function uniqueByUrl<T extends { url: string }>(link: T, index: number, links: T[]) {
+  return links.findIndex((candidate) => candidate.url === link.url) === index;
 }
 
 async function fetchHtmlFromWeb(url: string): Promise<string> {

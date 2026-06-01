@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import type { ParsedObjective, ParsedStudyGuide, SourceChunk } from "@/lib/types";
 
 const LEARN_HOST = "learn.microsoft.com";
+const ALLOWED_DOC_HOSTS = new Set([LEARN_HOST, "docs.github.com"]);
 
 export function parseStudyGuideHtml(url: string, html: string): ParsedStudyGuide {
   const $ = cheerio.load(html);
@@ -37,13 +38,28 @@ export function parseStudyGuideHtml(url: string, html: string): ParsedStudyGuide
     }
   });
 
-  const links = $("main a")
+  const links = extractStudyGuideLinks($, url);
+
+  return { url, title, examCode, objectives, links };
+}
+
+function extractStudyGuideLinks(
+  $: cheerio.CheerioAPI,
+  url: string,
+): Array<{ title: string; url: string }> {
+  const studyResourcesHeading = $("main h2, main h3")
     .toArray()
+    .find((heading) => /study resources/i.test(cleanText($(heading).text())));
+  const anchors = studyResourcesHeading
+    ? $(studyResourcesHeading).nextUntil("h2").find("a").toArray()
+    : $("main a").toArray();
+
+  return anchors
     .map((anchor) => {
       const href = $(anchor).attr("href");
       if (!href) return null;
       const absolute = new URL(href, url);
-      if (absolute.hostname !== LEARN_HOST) return null;
+      if (!ALLOWED_DOC_HOSTS.has(absolute.hostname)) return null;
       return {
         title: cleanText($(anchor).text()) || absolute.pathname.split("/").at(-1) || absolute.href,
         url: absolute.href.split("#")[0],
@@ -51,8 +67,30 @@ export function parseStudyGuideHtml(url: string, html: string): ParsedStudyGuide
     })
     .filter((link): link is { title: string; url: string } => Boolean(link))
     .filter(uniqueByUrl);
+}
 
-  return { url, title, examCode, objectives, links };
+export function parseLearningPathModuleLinks(
+  url: string,
+  html: string,
+): Array<{ title: string; url: string }> {
+  const $ = cheerio.load(html);
+
+  return $("main a, article a")
+    .toArray()
+    .map((anchor) => {
+      const href = $(anchor).attr("href");
+      if (!href) return null;
+      const absolute = new URL(href, url);
+      if (absolute.hostname !== LEARN_HOST) return null;
+      if (!absolute.pathname.includes("/training/modules/")) return null;
+
+      return {
+        title: cleanText($(anchor).text()) || absolute.pathname.split("/").filter(Boolean).at(-1) || absolute.href,
+        url: absolute.href.split("#")[0],
+      };
+    })
+    .filter((link): link is { title: string; url: string } => Boolean(link))
+    .filter(uniqueByUrl);
 }
 
 export function chunkSourcePage(

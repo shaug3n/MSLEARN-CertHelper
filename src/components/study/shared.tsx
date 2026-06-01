@@ -113,6 +113,7 @@ export function formatAnswer(value: string | string[]): string {
 }
 
 function GuideSummary({ guide }: { guide: GuideState }) {
+  const coverage = guide.sourceCoverage;
   return (
     <section className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-[1fr_auto]">
       <div className="min-w-0">
@@ -121,6 +122,12 @@ function GuideSummary({ guide }: { guide: GuideState }) {
           {guide.objectives.length} objectives - {guide.sourceChunkCount} source chunks -{" "}
           {guide.questions.length} questions
         </p>
+        {coverage ? (
+          <p className="mt-1 text-xs text-slate-600">
+            Sources: {coverage.totalPages} pages - {coverage.learnPaths} paths -{" "}
+            {coverage.learnModules} modules - {coverage.externalDocs} external docs
+          </p>
+        ) : null}
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <Metric label="Ready" value={`${guide.readiness.overallScore}%`} />

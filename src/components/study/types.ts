@@ -41,6 +41,13 @@ export type GuideState = {
     weightMax?: number;
   }>;
   sourceChunkCount: number;
+  sourceCoverage?: {
+    totalPages: number;
+    studyGuides: number;
+    learnPaths: number;
+    learnModules: number;
+    externalDocs: number;
+  };
   questions: Question[];
   latestAttempt: {
     id: string;

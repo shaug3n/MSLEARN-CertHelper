@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chunkSourcePage, parseStudyGuideHtml } from "./parser";
+import { chunkSourcePage, parseLearningPathModuleLinks, parseStudyGuideHtml } from "./parser";
 
 const guideHtml = `
   <html>
@@ -18,7 +18,9 @@ const guideHtml = `
         <ul>
           <li>Describe workflows and jobs</li>
         </ul>
-        <a href="/en-us/actions/learn-github-actions/understanding-github-actions">GitHub Actions docs</a>
+        <a href="/en-us/training/paths/github-foundations/">GitHub Foundations Part 1</a>
+        <a href="https://docs.github.com/en/actions">GitHub Actions docs</a>
+        <a href="https://example.com/not-allowed">Ignored vendor docs</a>
       </main>
     </body>
   </html>
@@ -85,8 +87,12 @@ describe("parseStudyGuideHtml", () => {
     ]);
     expect(guide.links).toEqual([
       {
+        title: "GitHub Foundations Part 1",
+        url: "https://learn.microsoft.com/en-us/training/paths/github-foundations/",
+      },
+      {
         title: "GitHub Actions docs",
-        url: "https://learn.microsoft.com/en-us/actions/learn-github-actions/understanding-github-actions",
+        url: "https://docs.github.com/en/actions",
       },
     ]);
   });
@@ -103,6 +109,34 @@ describe("parseStudyGuideHtml", () => {
         objective: "Describe the purpose and benefits of version control",
         weightMin: 25,
         weightMax: 30,
+      },
+    ]);
+  });
+});
+
+describe("parseLearningPathModuleLinks", () => {
+  it("extracts unique module links from a Microsoft Learn path page", () => {
+    const links = parseLearningPathModuleLinks(
+      "https://learn.microsoft.com/en-us/training/paths/github-foundations/",
+      `
+        <main>
+          <h1>GitHub Foundations Part 1 of 2</h1>
+          <a href="/en-us/training/modules/intro-to-git/">Introduction to Git</a>
+          <a href="/en-us/training/modules/introduction-to-github/">Introduction to GitHub</a>
+          <a href="/en-us/training/modules/intro-to-git/">Duplicate</a>
+          <a href="https://docs.github.com/en/actions">External docs</a>
+        </main>
+      `,
+    );
+
+    expect(links).toEqual([
+      {
+        title: "Introduction to Git",
+        url: "https://learn.microsoft.com/en-us/training/modules/intro-to-git/",
+      },
+      {
+        title: "Introduction to GitHub",
+        url: "https://learn.microsoft.com/en-us/training/modules/introduction-to-github/",
       },
     ]);
   });

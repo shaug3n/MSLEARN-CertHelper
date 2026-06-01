@@ -12,6 +12,13 @@ const initialGuide: GuideState = {
     { id: "obj-2", domain: "Actions", objective: "Describe workflows" },
   ],
   sourceChunkCount: 4,
+  sourceCoverage: {
+    totalPages: 4,
+    studyGuides: 1,
+    learnPaths: 1,
+    learnModules: 1,
+    externalDocs: 1,
+  },
   questions: [
     {
       id: "q1",
@@ -213,6 +220,7 @@ test("diagnoses gaps, shows remediation, and reviews a flashcard", async ({ page
   await expect(
     page.getByRole("heading", { name: "Study guide for Exam GH-900: GitHub Foundations" }),
   ).toBeVisible();
+  await expect(page.getByText("Sources: 4 pages - 1 paths - 1 modules - 1 external docs")).toBeVisible();
 
   await page.getByLabel("A correct statement about Describe repositories").check();
   await page.getByRole("button", { name: /Actions/ }).click();
