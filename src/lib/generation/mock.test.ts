@@ -4,7 +4,7 @@ import { calculateReadiness } from "@/lib/analytics/readiness";
 import type { ObjectiveWithId } from "@/lib/analytics/readiness";
 import type { SourceChunk } from "@/lib/types";
 
-import { buildMockAssessment, buildRemediationPacks } from "./mock";
+import { buildMockAssessment, buildMockFlashcards, buildRemediationPacks } from "./mock";
 
 const objectives: ObjectiveWithId[] = [
   {
@@ -29,14 +29,22 @@ const chunks: SourceChunk[] = [
 ];
 
 describe("buildMockAssessment", () => {
-  it("creates 50 cited multiple-choice questions and flashcards for objectives", () => {
+  it("creates 50 cited multiple-choice questions without flashcards", () => {
     const assessment = buildMockAssessment(objectives, chunks);
 
     expect(assessment.questions).toHaveLength(50);
     expect(assessment.questions.every((question) => question.type === "multiple_choice")).toBe(true);
     expect(assessment.questions.every((question) => question.citations.length > 0)).toBe(true);
-    expect(assessment.flashcards).toHaveLength(2);
-    expect(assessment.flashcards[0].front).toContain("Describe repositories");
+    expect(assessment.flashcards).toEqual([]);
+  });
+});
+
+describe("buildMockFlashcards", () => {
+  it("creates objective-mapped flashcards on demand", () => {
+    const flashcards = buildMockFlashcards(objectives, chunks);
+
+    expect(flashcards).toHaveLength(2);
+    expect(flashcards[0].front).toContain("Describe repositories");
   });
 });
 

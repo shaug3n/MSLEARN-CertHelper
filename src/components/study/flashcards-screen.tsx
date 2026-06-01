@@ -12,6 +12,7 @@ export function FlashcardsScreen({ guideId }: { guideId: string }) {
   const [showBack, setShowBack] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   const activeCard = useMemo(
     () => guide?.flashcards.find((card) => card.id === activeCardId) ?? guide?.flashcards[0],
@@ -20,6 +21,26 @@ export function FlashcardsScreen({ guideId }: { guideId: string }) {
 
   if (loading) return <LoadingState label="Loading flashcards..." />;
   if (error || !guide) return <ErrorState message={error ?? "Guide not found."} />;
+  const currentGuide = guide;
+
+  async function generateCards() {
+    setReviewError(null);
+    setGenerating(true);
+    const response = await fetch(`/api/guides/${currentGuide.id}/flashcards`, {
+      method: "POST",
+    });
+    const payload = await response.json();
+    setGenerating(false);
+
+    if (!response.ok) {
+      setReviewError(payload.error ?? "Could not generate flashcards.");
+      return;
+    }
+
+    setGuide(payload.guide);
+    setActiveCardId(payload.guide.flashcards[0]?.id ?? null);
+    setShowBack(false);
+  }
 
   async function reviewCard(rating: "forgot" | "hard" | "easy") {
     if (!activeCard) return;
@@ -44,12 +65,12 @@ export function FlashcardsScreen({ guideId }: { guideId: string }) {
   }
 
   return (
-    <AppShell activeView="flashcards" guide={guide}>
+    <AppShell activeView="flashcards" guide={currentGuide}>
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <aside className="h-fit rounded-md border border-slate-200 bg-white p-4 lg:sticky lg:top-4">
           <h2 className="font-semibold">Due Flashcards</h2>
           <div className="mt-4 space-y-2">
-            {guide.flashcards.map((card) => (
+            {currentGuide.flashcards.map((card) => (
               <button
                 className={`w-full rounded-md border p-3 text-left text-sm ${
                   activeCard?.id === card.id
@@ -119,7 +140,19 @@ export function FlashcardsScreen({ guideId }: { guideId: string }) {
               <CitationList citations={activeCard.citations} />
             </div>
           ) : (
-            <p className="mt-4 text-sm text-slate-600">No flashcards generated yet.</p>
+            <div className="mt-4 space-y-3">
+              <p className="text-sm text-slate-600">
+                Flashcards are generated on demand so the initial guide analysis finishes faster.
+              </p>
+              <button
+                className="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                disabled={generating}
+                onClick={generateCards}
+              >
+                {generating ? "Generating flashcards..." : "Generate flashcards"}
+              </button>
+              {reviewError ? <p className="text-sm text-red-700">{reviewError}</p> : null}
+            </div>
           )}
         </section>
       </div>

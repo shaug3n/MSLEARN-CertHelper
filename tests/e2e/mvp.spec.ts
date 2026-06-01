@@ -46,25 +46,7 @@ const initialGuide: GuideState = {
   ],
   latestAttempt: null,
   remediationPacks: [],
-  flashcards: [
-    {
-      id: "card-1",
-      objectiveId: "obj-2",
-      front: "Active recall: Describe workflows",
-      back: "A workflow is a configurable automated process.",
-      citations: [
-        {
-          url: "https://learn.microsoft.com/en-us/actions",
-          title: "GitHub Actions",
-          headingPath: ["GitHub Actions", "Workflows"],
-        },
-      ],
-      dueAt: "2026-05-31T12:00:00.000Z",
-      intervalDays: 0,
-      easeFactor: 2.5,
-      repetitions: 0,
-    },
-  ],
+  flashcards: [],
   readiness: {
     overallScore: 0,
     domains: [
@@ -120,6 +102,7 @@ const scoredGuide: GuideState = {
       citations: initialGuide.questions[1].citations,
     },
   ],
+  flashcards: [],
   readiness: {
     overallScore: 50,
     domains: [
@@ -136,6 +119,29 @@ const scoredGuide: GuideState = {
     ],
     recommendation: "Focus on Actions before taking the exam.",
   },
+};
+
+const flashcardGuide: GuideState = {
+  ...scoredGuide,
+  flashcards: [
+    {
+      id: "card-1",
+      objectiveId: "obj-2",
+      front: "Active recall: Describe workflows",
+      back: "A workflow is a configurable automated process.",
+      citations: [
+        {
+          url: "https://learn.microsoft.com/en-us/actions",
+          title: "GitHub Actions",
+          headingPath: ["GitHub Actions", "Workflows"],
+        },
+      ],
+      dueAt: "2026-05-31T12:00:00.000Z",
+      intervalDays: 0,
+      easeFactor: 2.5,
+      repetitions: 0,
+    },
+  ],
 };
 
 test("shows an analysis loading card while the guide is being generated", async ({ page }) => {
@@ -178,12 +184,16 @@ test("diagnoses gaps, shows remediation, and reviews a flashcard", async ({ page
     currentGuide = scoredGuide;
     await route.fulfill({ json: { guide: scoredGuide } });
   });
+  await page.route("**/api/guides/guide-1/flashcards", async (route) => {
+    currentGuide = flashcardGuide;
+    await route.fulfill({ json: { guide: flashcardGuide } });
+  });
   await page.route("**/api/flashcards/card-1/review", async (route) => {
     currentGuide = {
-      ...scoredGuide,
+      ...flashcardGuide,
       flashcards: [
         {
-          ...scoredGuide.flashcards[0],
+          ...flashcardGuide.flashcards[0],
           intervalDays: 1,
           repetitions: 0,
           dueAt: "2026-06-01T12:00:00.000Z",
@@ -220,6 +230,7 @@ test("diagnoses gaps, shows remediation, and reviews a flashcard", async ({ page
 
   await page.getByRole("link", { name: "Study flashcards" }).click();
   await expect(page).toHaveURL(/\/guide\/guide-1\/flashcards$/);
+  await page.getByRole("button", { name: "Generate flashcards" }).click();
   await page.getByRole("button", { name: "Show answer" }).click();
   await expect(page.getByText("A workflow is a configurable automated process.")).toBeVisible();
   await page.getByRole("button", { name: "Forgot" }).click();

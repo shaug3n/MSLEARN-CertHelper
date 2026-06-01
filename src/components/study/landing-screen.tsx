@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AnalysisLoadingCard } from "./analysis-loading-card";
 import { AppShell } from "./shared";
+import { EXAM_TECH_FILTERS, examCatalog } from "@/lib/exam-catalog";
 
 const sampleGuide =
   "https://learn.microsoft.com/en-us/credentials/certifications/resources/study-guides/gh-900";
@@ -12,6 +13,7 @@ const sampleGuide =
 export function LandingScreen() {
   const router = useRouter();
   const [url, setUrl] = useState(sampleGuide);
+  const [selectedPrefix, setSelectedPrefix] = useState<(typeof EXAM_TECH_FILTERS)[number]["prefix"]>("ALL");
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
@@ -23,6 +25,9 @@ export function LandingScreen() {
   }, []);
 
   const handleSessionReady = useCallback(() => setSessionReady(true), []);
+  const visibleExams = examCatalog.filter((exam) =>
+    selectedPrefix === "ALL" ? true : exam.prefix === selectedPrefix,
+  );
 
   async function analyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -61,9 +66,47 @@ export function LandingScreen() {
             what you missed, then drill flashcards separately.
           </p>
 
+          <div className="mt-8 space-y-4 rounded-md border border-slate-200 bg-slate-50 p-5">
+            <div className="flex flex-wrap gap-2">
+              {EXAM_TECH_FILTERS.map((filter) => (
+                <button
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold ${
+                    selectedPrefix === filter.prefix
+                      ? "bg-slate-950 text-white"
+                      : "bg-white text-slate-700 ring-1 ring-slate-200"
+                  }`}
+                  key={filter.prefix}
+                  onClick={() => setSelectedPrefix(filter.prefix)}
+                  type="button"
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              <select
+                aria-label="Certification study guide"
+                className="min-h-12 rounded-md border border-slate-300 bg-white px-4 text-sm outline-none ring-blue-600 focus:ring-2"
+                onChange={(event) => setUrl(event.target.value)}
+                value={url}
+              >
+                <option value={sampleGuide}>Choose a certification study guide</option>
+                {visibleExams.map((exam) => (
+                  <option key={exam.code} value={exam.url}>
+                    {exam.code} - {exam.technology}
+                  </option>
+                ))}
+              </select>
+              <div className="rounded-md bg-white px-4 py-3 text-xs text-slate-500 ring-1 ring-slate-200">
+                {visibleExams.length} exams
+              </div>
+            </div>
+          </div>
+
           <form onSubmit={analyze} className="mt-8 space-y-3">
             <label className="text-sm font-semibold" htmlFor="study-guide-url">
-              Microsoft Learn study guide URL
+              Microsoft Learn study guide URL or selected certification
             </label>
             <div className="flex flex-col gap-3 sm:flex-row">
               <input

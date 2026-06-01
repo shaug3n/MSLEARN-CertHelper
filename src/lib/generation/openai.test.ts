@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ASSESSMENT_QUESTION_COUNT,
   OPENAI_ASSESSMENT_SYSTEM_PROMPT,
+  OPENAI_FLASHCARDS_SYSTEM_PROMPT,
   buildOpenAiRequestPayload,
+  buildOpenAiFlashcardRequestPayload,
   generateAssessment,
   buildOpenAiResponseSchema,
   normalizeOpenAiAssessment,
@@ -38,6 +40,7 @@ describe("buildOpenAiRequestPayload", () => {
     const payload = buildOpenAiRequestPayload([], []);
 
     expect(OPENAI_ASSESSMENT_SYSTEM_PROMPT).toContain("multiple-choice");
+    expect(OPENAI_ASSESSMENT_SYSTEM_PROMPT).not.toContain("flashcards");
     expect(payload.input[1].content).toContain(`"questionCount":${ASSESSMENT_QUESTION_COUNT}`);
     expect(payload.input[1].content).toContain('"requiredQuestionTypes":["multiple_choice"]');
   });
@@ -61,10 +64,27 @@ describe("buildOpenAiRequestPayload", () => {
     expect(userInput).toContain("A".repeat(480));
     expect(userInput).not.toContain('"url":"https://learn.microsoft.com/24"');
   });
+
+  it("builds a separate flashcard payload for on-demand study generation", () => {
+    const payload = buildOpenAiFlashcardRequestPayload(
+      [{ id: "obj-1", domain: "Actions", objective: "Describe workflows" }],
+      [
+        {
+          url: "https://learn.microsoft.com/en-us/actions",
+          title: "GitHub Actions",
+          headingPath: ["Workflows"],
+          content: "A workflow is a configurable automated process.",
+        },
+      ],
+    );
+
+    expect(OPENAI_FLASHCARDS_SYSTEM_PROMPT).toContain("flashcards");
+    expect(payload.input[1].content).toContain('"objectiveCount":1');
+  });
 });
 
 describe("normalizeOpenAiAssessment", () => {
-  it("normalizes flat OpenAI questions into app question variants", () => {
+  it("normalizes flat OpenAI questions into app question variants without flashcards", () => {
     const assessment = normalizeOpenAiAssessment({
       questions: [
         {
@@ -117,6 +137,7 @@ describe("normalizeOpenAiAssessment", () => {
       ],
       difficulty: "medium",
     });
+    expect(assessment.flashcards).toEqual([]);
   });
 });
 

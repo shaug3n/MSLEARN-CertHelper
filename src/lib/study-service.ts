@@ -2,7 +2,7 @@ import { calculateReadiness, type ObjectiveWithId } from "@/lib/analytics/readin
 import { gradeDeterministicQuestion } from "@/lib/assessment/grading";
 import { prisma } from "@/lib/db";
 import { balanceMultipleChoiceAnswerPositions } from "@/lib/generation/choices";
-import { generateAssessment } from "@/lib/generation/openai";
+import { generateAssessment, generateFlashcards } from "@/lib/generation/openai";
 import { buildRemediationPacks } from "@/lib/generation/mock";
 import { chunkSourcePage, parseStudyGuideHtml } from "@/lib/ingestion/parser";
 import { parseJson, stringifyJson } from "@/lib/json";
@@ -94,16 +94,6 @@ export async function analyzeStudyGuide(
       points: question.type === "ordering" ? 2 : 1,
     })),
   });
-  await prisma.flashcard.createMany({
-    data: assessment.flashcards.map((card) => ({
-      guideId: guide.id,
-      objectiveId: card.objectiveId,
-      front: card.front,
-      back: card.back,
-      citationsJson: stringifyJson(card.citations),
-    })),
-  });
-
   return getGuideState(userId, guide.id);
 }
 
@@ -313,6 +303,44 @@ export async function reviewDueFlashcard(
   });
 
   return getGuideState(userId, card.guideId);
+}
+
+export async function generateGuideFlashcards(userId: string, guideId: string) {
+  const guide = await prisma.studyGuide.findFirstOrThrow({
+    where: { id: guideId, userId },
+    include: { objectives: true, sourceChunks: true, flashcards: true },
+  });
+
+  if (guide.flashcards.length > 0) {
+    return getGuideState(userId, guideId);
+  }
+
+  const objectives = guide.objectives.map((objective) => ({
+    id: objective.id,
+    domain: objective.domain,
+    objective: objective.text,
+    weightMin: objective.weightMin ?? undefined,
+    weightMax: objective.weightMax ?? undefined,
+  }));
+  const chunks = guide.sourceChunks.map((chunk) => ({
+    url: chunk.url,
+    title: chunk.title,
+    headingPath: parseJson<string[]>(chunk.headingPathJson, [chunk.title]),
+    content: chunk.content,
+  }));
+  const flashcards = await generateFlashcards(objectives, chunks);
+
+  await prisma.flashcard.createMany({
+    data: flashcards.map((card) => ({
+      guideId,
+      objectiveId: card.objectiveId,
+      front: card.front,
+      back: card.back,
+      citationsJson: stringifyJson(card.citations),
+    })),
+  });
+
+  return getGuideState(userId, guideId);
 }
 
 async function loadSourcePages(
