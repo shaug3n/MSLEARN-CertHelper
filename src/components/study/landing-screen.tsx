@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppShell } from "./shared";
@@ -13,12 +13,15 @@ export function LandingScreen() {
   const [url, setUrl] = useState(sampleGuide);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setReady(true), 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  const handleSessionReady = useCallback(() => setSessionReady(true), []);
 
   async function analyze(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,7 +45,7 @@ export function LandingScreen() {
   }
 
   return (
-    <AppShell>
+    <AppShell onSessionReady={handleSessionReady}>
       <section className="grid gap-8 lg:grid-cols-[1fr_420px] lg:items-start">
         <div className="rounded-md border border-slate-200 bg-white p-8">
           <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">
@@ -70,9 +73,9 @@ export function LandingScreen() {
               />
               <button
                 className="min-h-12 rounded-md bg-blue-700 px-5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
-                disabled={loading || !ready}
+                disabled={loading || !ready || !sessionReady}
               >
-                {loading ? "Analyzing..." : "Analyze guide"}
+                {loading ? "Analyzing..." : sessionReady ? "Analyze guide" : "Creating session..."}
               </button>
             </div>
             {error ? <p className="text-sm text-red-700">{error}</p> : null}

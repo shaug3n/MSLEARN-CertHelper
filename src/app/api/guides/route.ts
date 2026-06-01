@@ -1,3 +1,4 @@
+import { getOrCreateCurrentUser } from "@/lib/auth/session";
 import { analyzeStudyGuide } from "@/lib/study-service";
 
 export const runtime = "nodejs";
@@ -9,7 +10,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "Study guide URL is required." }, { status: 400 });
     }
 
-    const guide = await analyzeStudyGuide(body.url);
+    const user = await getOrCreateCurrentUser();
+    const guide = await analyzeStudyGuide(user.id, body.url);
     return Response.json({ guide });
   } catch (error) {
     return Response.json(

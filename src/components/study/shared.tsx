@@ -3,16 +3,19 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { SessionBadge } from "./session-badge";
 import type { Citation, GuideState, View } from "./types";
 
 export function AppShell({
   activeView,
   children,
   guide,
+  onSessionReady,
 }: {
   activeView?: View;
   children: ReactNode;
   guide?: GuideState | null;
+  onSessionReady?: () => void;
 }) {
   return (
     <main className="min-h-screen bg-slate-100 text-slate-950">
@@ -27,7 +30,10 @@ export function AppShell({
                 {guide ? `${guide.examCode} study workspace` : "Build a focused study workspace"}
               </h1>
             </Link>
-            {guide ? <TopNav activeView={activeView ?? "practice"} guideId={guide.id} /> : null}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <SessionBadge onReady={onSessionReady} />
+              {guide ? <TopNav activeView={activeView ?? "practice"} guideId={guide.id} /> : null}
+            </div>
           </div>
           {guide ? <GuideSummary guide={guide} /> : null}
         </div>

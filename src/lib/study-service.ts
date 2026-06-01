@@ -15,7 +15,11 @@ type FetchHtml = (url: string) => Promise<string>;
 
 export type SubmittedAnswers = Record<string, string | string[]>;
 
-export async function analyzeStudyGuide(url: string, fetchHtml = fetchHtmlFromWeb) {
+export async function analyzeStudyGuide(
+  userId: string,
+  url: string,
+  fetchHtml = fetchHtmlFromWeb,
+) {
   assertLearnUrl(url);
   const guideHtml = await fetchHtml(url);
   const parsed = parseStudyGuideHtml(url, guideHtml);
@@ -24,10 +28,11 @@ export async function analyzeStudyGuide(url: string, fetchHtml = fetchHtmlFromWe
     sourcePages.push({ url, title: parsed.title, chunks: chunkSourcePage(url, guideHtml) });
   }
 
-  await prisma.studyGuide.deleteMany({ where: { url } });
+  await prisma.studyGuide.deleteMany({ where: { userId, url } });
 
   const guide = await prisma.studyGuide.create({
     data: {
+      userId,
       url,
       title: parsed.title,
       examCode: parsed.examCode,
@@ -98,12 +103,12 @@ export async function analyzeStudyGuide(url: string, fetchHtml = fetchHtmlFromWe
     })),
   });
 
-  return getGuideState(guide.id);
+  return getGuideState(userId, guide.id);
 }
 
-export async function getGuideState(guideId: string) {
-  const guide = await prisma.studyGuide.findUniqueOrThrow({
-    where: { id: guideId },
+export async function getGuideState(userId: string, guideId: string) {
+  const guide = await prisma.studyGuide.findFirstOrThrow({
+    where: { id: guideId, userId },
     include: {
       objectives: true,
       sourceChunks: true,
@@ -199,9 +204,13 @@ export async function getGuideState(guideId: string) {
   };
 }
 
-export async function submitAttempt(guideId: string, answers: SubmittedAnswers) {
-  const guide = await prisma.studyGuide.findUniqueOrThrow({
-    where: { id: guideId },
+export async function submitAttempt(
+  userId: string,
+  guideId: string,
+  answers: SubmittedAnswers,
+) {
+  const guide = await prisma.studyGuide.findFirstOrThrow({
+    where: { id: guideId, userId },
     include: { objectives: true, questions: true, sourceChunks: true },
   });
 
@@ -265,11 +274,17 @@ export async function submitAttempt(guideId: string, answers: SubmittedAnswers) 
     })),
   });
 
-  return getGuideState(guideId);
+  return getGuideState(userId, guideId);
 }
 
-export async function reviewDueFlashcard(flashcardId: string, rating: ReviewRating) {
-  const card = await prisma.flashcard.findUniqueOrThrow({ where: { id: flashcardId } });
+export async function reviewDueFlashcard(
+  userId: string,
+  flashcardId: string,
+  rating: ReviewRating,
+) {
+  const card = await prisma.flashcard.findFirstOrThrow({
+    where: { id: flashcardId, guide: { userId } },
+  });
   const next = reviewFlashcard(
     {
       intervalDays: card.intervalDays,
@@ -296,7 +311,7 @@ export async function reviewDueFlashcard(flashcardId: string, rating: ReviewRati
     },
   });
 
-  return getGuideState(card.guideId);
+  return getGuideState(userId, card.guideId);
 }
 
 async function loadSourcePages(
