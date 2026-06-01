@@ -1,3 +1,4 @@
+import { getOrCreateCurrentUser } from "@/lib/auth/session";
 import { getGuideState } from "@/lib/study-service";
 
 export const runtime = "nodejs";
@@ -8,7 +9,8 @@ export async function GET(
 ) {
   try {
     const { id } = await context.params;
-    const guide = await getGuideState(id);
+    const user = await getOrCreateCurrentUser();
+    const guide = await getGuideState(user.id, id);
     return Response.json({ guide });
   } catch (error) {
     return Response.json(

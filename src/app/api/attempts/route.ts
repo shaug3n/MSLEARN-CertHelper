@@ -1,3 +1,4 @@
+import { getOrCreateCurrentUser } from "@/lib/auth/session";
 import { submitAttempt } from "@/lib/study-service";
 
 export const runtime = "nodejs";
@@ -12,7 +13,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "Guide ID and answers are required." }, { status: 400 });
     }
 
-    const guide = await submitAttempt(body.guideId, body.answers);
+    const user = await getOrCreateCurrentUser();
+    const guide = await submitAttempt(user.id, body.guideId, body.answers);
     return Response.json({ guide });
   } catch (error) {
     return Response.json(

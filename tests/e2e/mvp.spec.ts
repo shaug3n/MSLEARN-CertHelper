@@ -141,6 +141,11 @@ const scoredGuide: GuideState = {
 test("diagnoses gaps, shows remediation, and reviews a flashcard", async ({ page }) => {
   let currentGuide: GuideState = initialGuide;
 
+  await page.route("**/api/session", async (route) => {
+    await route.fulfill({
+      json: { user: { id: "user-1", displayName: "Demo user e2e" } },
+    });
+  });
   await page.route("**/api/guides", async (route) => {
     currentGuide = initialGuide;
     await route.fulfill({ json: { guide: initialGuide } });

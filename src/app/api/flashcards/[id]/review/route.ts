@@ -1,3 +1,4 @@
+import { getOrCreateCurrentUser } from "@/lib/auth/session";
 import { reviewDueFlashcard } from "@/lib/study-service";
 import type { ReviewRating } from "@/lib/srs/sm2";
 
@@ -14,7 +15,8 @@ export async function POST(
       return Response.json({ error: "Rating must be forgot, hard, or easy." }, { status: 400 });
     }
 
-    const guide = await reviewDueFlashcard(id, body.rating);
+    const user = await getOrCreateCurrentUser();
+    const guide = await reviewDueFlashcard(user.id, id, body.rating);
     return Response.json({ guide });
   } catch (error) {
     return Response.json(
