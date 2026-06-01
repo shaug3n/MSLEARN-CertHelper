@@ -13,6 +13,10 @@ export { ASSESSMENT_QUESTION_COUNT } from "./mock";
 
 export const OPENAI_ASSESSMENT_SYSTEM_PROMPT =
   "Generate Microsoft certification practice content. Create exactly 50 multiple-choice practice test questions. Every question must map to one objectiveId and include at least one citation from the provided source chunks. Each question must have four plausible answer choices, exactly one correct answer, and no true/false questions. Also create flashcards for spaced repetition.";
+const MAX_SOURCE_CHUNKS_FOR_OPENAI = 16;
+const MAX_SOURCE_CHUNK_CONTENT_LENGTH = 480;
+const MAX_OPENAI_OUTPUT_TOKENS = 8000;
+const OPENAI_REQUEST_TIMEOUT_MS = 90_000;
 
 export async function generateAssessment(
   objectives: ObjectiveWithId[],
@@ -22,17 +26,40 @@ export async function generateAssessment(
     return buildMockAssessment(objectives, chunks);
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(buildOpenAiRequestPayload(objectives, chunks)),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENAI_REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      signal: controller.signal,
+      body: JSON.stringify(buildOpenAiRequestPayload(objectives, chunks)),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      console.error("OpenAI generation timed out; falling back to deterministic assessment.");
+      return buildMockAssessment(objectives, chunks);
+    }
+    console.error("OpenAI request failed; falling back to deterministic assessment.", error);
+    return buildMockAssessment(objectives, chunks);
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
-    throw new Error(`OpenAI generation failed: ${response.status} ${await response.text()}`);
+    const responseText = await response.text();
+    if (response.status >= 500 || response.status === 429) {
+      console.error(
+        `OpenAI generation returned ${response.status}; falling back to deterministic assessment.`,
+        responseText,
+      );
+      return buildMockAssessment(objectives, chunks);
+    }
+    throw new Error(`OpenAI generation failed: ${response.status} ${responseText}`);
   }
 
   const payload = (await response.json()) as {
@@ -44,10 +71,16 @@ export async function generateAssessment(
     payload.output?.flatMap((item) => item.content ?? []).find((item) => item.text)?.text;
 
   if (!text) {
-    throw new Error("OpenAI response did not contain structured output text.");
+    console.error("OpenAI response did not include structured output text; using fallback.");
+    return buildMockAssessment(objectives, chunks);
   }
 
-  return normalizeOpenAiAssessment(JSON.parse(text));
+  try {
+    return normalizeOpenAiAssessment(JSON.parse(text));
+  } catch (error) {
+    console.error("OpenAI response could not be normalized; using fallback.", error);
+    return buildMockAssessment(objectives, chunks);
+  }
 }
 
 export function normalizeOpenAiAssessment(payload: unknown): GeneratedAssessment {
@@ -98,6 +131,7 @@ export function buildOpenAiRequestPayload(
 ) {
   return {
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+    max_output_tokens: MAX_OPENAI_OUTPUT_TOKENS,
     input: [
       {
         role: "system",
@@ -108,7 +142,7 @@ export function buildOpenAiRequestPayload(
         content: JSON.stringify({
           questionCount: ASSESSMENT_QUESTION_COUNT,
           objectives,
-          sourceChunks: chunks.slice(0, 40),
+          sourceChunks: compactSourceChunks(chunks),
           requiredQuestionTypes: ["multiple_choice"],
           distribution:
             "Spread questions across all objectives. If there are fewer than 50 objectives, create multiple distinct questions per objective.",
@@ -124,6 +158,13 @@ export function buildOpenAiRequestPayload(
       },
     },
   };
+}
+
+function compactSourceChunks(chunks: SourceChunk[]) {
+  return chunks.slice(0, MAX_SOURCE_CHUNKS_FOR_OPENAI).map((chunk) => ({
+    ...chunk,
+    content: chunk.content.slice(0, MAX_SOURCE_CHUNK_CONTENT_LENGTH).trim(),
+  }));
 }
 
 export function buildOpenAiResponseSchema() {

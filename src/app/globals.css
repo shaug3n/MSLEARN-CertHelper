@@ -24,3 +24,23 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes analysis-sweep {
+  0% {
+    transform: translateX(-115%);
+  }
+
+  55% {
+    transform: translateX(15%);
+  }
+
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.analysis-progress-bar {
+  width: 38%;
+  background: linear-gradient(90deg, #0ea5e9 0%, #2563eb 55%, #f59e0b 100%);
+  animation: analysis-sweep 1.8s ease-in-out infinite;
+}

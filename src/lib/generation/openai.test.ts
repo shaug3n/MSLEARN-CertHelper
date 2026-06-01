@@ -1,12 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ASSESSMENT_QUESTION_COUNT,
   OPENAI_ASSESSMENT_SYSTEM_PROMPT,
   buildOpenAiRequestPayload,
+  generateAssessment,
   buildOpenAiResponseSchema,
   normalizeOpenAiAssessment,
 } from "./openai";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  delete process.env.OPENAI_API_KEY;
+});
 
 describe("buildOpenAiResponseSchema", () => {
   it("does not use unsupported composition keywords in question items", () => {
@@ -33,6 +40,26 @@ describe("buildOpenAiRequestPayload", () => {
     expect(OPENAI_ASSESSMENT_SYSTEM_PROMPT).toContain("multiple-choice");
     expect(payload.input[1].content).toContain(`"questionCount":${ASSESSMENT_QUESTION_COUNT}`);
     expect(payload.input[1].content).toContain('"requiredQuestionTypes":["multiple_choice"]');
+  });
+
+  it("compacts source chunks to reduce hosted inference latency", () => {
+    const payload = buildOpenAiRequestPayload(
+      [{ id: "obj-1", domain: "Actions", objective: "Describe workflows" }],
+      Array.from({ length: 25 }).map((_, index) => ({
+        url: `https://learn.microsoft.com/${index}`,
+        title: `Doc ${index}`,
+        headingPath: ["Actions", `Heading ${index}`],
+        content: "A".repeat(900),
+      })),
+    );
+
+    const userInput = payload.input[1].content;
+
+    expect(payload.max_output_tokens).toBe(8000);
+    expect(userInput).toContain('"sourceChunks"');
+    expect(userInput).not.toContain("A".repeat(900));
+    expect(userInput).toContain("A".repeat(480));
+    expect(userInput).not.toContain('"url":"https://learn.microsoft.com/24"');
   });
 });
 
@@ -90,5 +117,57 @@ describe("normalizeOpenAiAssessment", () => {
       ],
       difficulty: "medium",
     });
+  });
+});
+
+describe("generateAssessment", () => {
+  it("falls back to deterministic generation when OpenAI times out", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(Object.assign(new Error("aborted"), { name: "AbortError" })),
+    );
+
+    const assessment = await generateAssessment(
+      [{ id: "obj-1", domain: "Actions", objective: "Describe workflows" }],
+      [
+        {
+          url: "https://learn.microsoft.com/en-us/actions",
+          title: "GitHub Actions",
+          headingPath: ["Workflows"],
+          content: "A workflow is a configurable automated process.",
+        },
+      ],
+    );
+
+    expect(assessment.questions).toHaveLength(ASSESSMENT_QUESTION_COUNT);
+    expect(assessment.questions[0].type).toBe("multiple_choice");
+  });
+
+  it("still throws configuration errors such as unauthorized API keys", async () => {
+    process.env.OPENAI_API_KEY = "bad-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: "Unauthorized" } }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(
+      generateAssessment(
+        [{ id: "obj-1", domain: "Actions", objective: "Describe workflows" }],
+        [
+          {
+            url: "https://learn.microsoft.com/en-us/actions",
+            title: "GitHub Actions",
+            headingPath: ["Workflows"],
+            content: "A workflow is a configurable automated process.",
+          },
+        ],
+      ),
+    ).rejects.toThrow("OpenAI generation failed: 401");
   });
 });

@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { AnalysisLoadingCard } from "./analysis-loading-card";
 import { AppShell } from "./shared";
 
 const sampleGuide =
@@ -46,6 +47,7 @@ export function LandingScreen() {
 
   return (
     <AppShell onSessionReady={handleSessionReady}>
+      {loading ? <AnalysisLoadingCard /> : null}
       <section className="grid gap-8 lg:grid-cols-[1fr_420px] lg:items-start">
         <div className="rounded-md border border-slate-200 bg-white p-8">
           <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">

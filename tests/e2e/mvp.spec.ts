@@ -138,6 +138,27 @@ const scoredGuide: GuideState = {
   },
 };
 
+test("shows an analysis loading card while the guide is being generated", async ({ page }) => {
+  await page.route("**/api/session", async (route) => {
+    await route.fulfill({
+      json: { user: { id: "user-1", displayName: "Demo user e2e" } },
+    });
+  });
+  await page.route("**/api/guides", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.fulfill({ json: { guide: initialGuide } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Analyze guide" }).click();
+
+  await expect(page.getByRole("heading", { name: "Analyzing your study guide" })).toBeVisible();
+  await expect(page.getByText("Building your practice workspace")).toBeVisible();
+  await expect(page.getByText("Great engineers trust version control")).toBeVisible();
+
+  await expect(page).toHaveURL(/\/guide\/guide-1\/practice$/);
+});
+
 test("diagnoses gaps, shows remediation, and reviews a flashcard", async ({ page }) => {
   let currentGuide: GuideState = initialGuide;
 
