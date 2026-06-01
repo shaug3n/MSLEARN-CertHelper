@@ -8,7 +8,6 @@ import {
   buildMockFlashcards,
 } from "./mock";
 import {
-  CitationSchema,
   GeneratedAssessmentSchema,
   type GeneratedAssessment,
 } from "./schemas";
@@ -33,6 +32,7 @@ export async function generateAssessment(
     return buildMockAssessment(objectives, chunks);
   }
 
+  const sourceChunks = compactSourceChunks(chunks);
   const response = await sendOpenAiRequest(buildOpenAiRequestPayload(objectives, chunks));
   if (!response) return buildMockAssessment(objectives, chunks);
 
@@ -43,7 +43,7 @@ export async function generateAssessment(
   }
 
   try {
-    return normalizeOpenAiAssessment(JSON.parse(text));
+    return normalizeOpenAiAssessment(JSON.parse(text), sourceChunks);
   } catch (error) {
     console.error("OpenAI response could not be normalized; using fallback.", error);
     return buildMockAssessment(objectives, chunks);
@@ -58,7 +58,10 @@ export async function generateFlashcards(
     return buildMockFlashcards(objectives, chunks);
   }
 
-  const response = await sendOpenAiRequest(buildOpenAiFlashcardRequestPayload(objectives, chunks));
+  const sourceChunks = compactSourceChunks(chunks);
+  const response = await sendOpenAiRequest(
+    buildOpenAiFlashcardRequestPayload(objectives, chunks),
+  );
   if (!response) return buildMockFlashcards(objectives, chunks);
 
   const text = await extractOpenAiText(response);
@@ -68,14 +71,23 @@ export async function generateFlashcards(
   }
 
   try {
-    return FlashcardResponseSchema.parse(JSON.parse(text)).flashcards;
+    const raw = FlashcardResponseSchema.parse(JSON.parse(text));
+    return raw.flashcards.map((card) => ({
+      objectiveId: card.objectiveId,
+      front: card.front,
+      back: card.back,
+      citations: mapSourceChunkIdsToCitations(card.sourceChunkIds, sourceChunks),
+    }));
   } catch (error) {
     console.error("OpenAI flashcards could not be normalized; using fallback.", error);
     return buildMockFlashcards(objectives, chunks);
   }
 }
 
-export function normalizeOpenAiAssessment(payload: unknown): GeneratedAssessment {
+export function normalizeOpenAiAssessment(
+  payload: unknown,
+  sourceChunks: CompactSourceChunk[],
+): GeneratedAssessment {
   const raw = AssessmentQuestionResponseSchema.parse(payload);
   return GeneratedAssessmentSchema.parse({
     questions: raw.questions.map((question) => ({
@@ -84,7 +96,7 @@ export function normalizeOpenAiAssessment(payload: unknown): GeneratedAssessment
       prompt: question.prompt,
       choices: question.choices,
       answer: question.answer,
-      citations: question.citations,
+      citations: mapSourceChunkIdsToCitations(question.sourceChunkIds, sourceChunks),
       difficulty: question.difficulty,
     })),
     flashcards: [],
@@ -95,6 +107,7 @@ export function buildOpenAiRequestPayload(
   objectives: ObjectiveWithId[],
   chunks: SourceChunk[],
 ) {
+  const sourceChunks = compactSourceChunks(chunks);
   return {
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
     max_output_tokens: MAX_OPENAI_OUTPUT_TOKENS,
@@ -108,7 +121,7 @@ export function buildOpenAiRequestPayload(
         content: JSON.stringify({
           questionCount: ASSESSMENT_QUESTION_COUNT,
           objectives,
-          sourceChunks: compactSourceChunks(chunks),
+          sourceChunks,
           requiredQuestionTypes: ["multiple_choice"],
           distribution:
             "Spread questions across all objectives. If there are fewer than 50 objectives, create multiple distinct questions per objective.",
@@ -130,6 +143,7 @@ export function buildOpenAiFlashcardRequestPayload(
   objectives: ObjectiveWithId[],
   chunks: SourceChunk[],
 ) {
+  const sourceChunks = compactSourceChunks(chunks);
   return {
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
     max_output_tokens: 4000,
@@ -143,7 +157,7 @@ export function buildOpenAiFlashcardRequestPayload(
         content: JSON.stringify({
           objectiveCount: objectives.length,
           objectives,
-          sourceChunks: compactSourceChunks(chunks),
+          sourceChunks,
         }),
       },
     ],
@@ -159,10 +173,36 @@ export function buildOpenAiFlashcardRequestPayload(
 }
 
 function compactSourceChunks(chunks: SourceChunk[]) {
-  return chunks.slice(0, MAX_SOURCE_CHUNKS_FOR_OPENAI).map((chunk) => ({
+  return chunks.slice(0, MAX_SOURCE_CHUNKS_FOR_OPENAI).map((chunk, index) => ({
+    id: `chunk-${index + 1}`,
     ...chunk,
     content: chunk.content.slice(0, MAX_SOURCE_CHUNK_CONTENT_LENGTH).trim(),
   }));
+}
+
+type CompactSourceChunk = {
+  id: string;
+  url: string;
+  title: string;
+  headingPath: string[];
+  content: string;
+};
+
+function mapSourceChunkIdsToCitations(
+  sourceChunkIds: string[],
+  sourceChunks: CompactSourceChunk[],
+) {
+  const chunkMap = new Map(sourceChunks.map((chunk) => [chunk.id, chunk] as const));
+  const citations = sourceChunkIds
+    .map((id) => chunkMap.get(id))
+    .filter((chunk): chunk is CompactSourceChunk => Boolean(chunk))
+    .map(({ url, title, headingPath }) => ({ url, title, headingPath }));
+
+  if (citations.length === 0) {
+    throw new Error("OpenAI response referenced source chunks that were not provided.");
+  }
+
+  return citations;
 }
 
 async function sendOpenAiRequest(payload: unknown) {
@@ -209,12 +249,15 @@ async function sendOpenAiRequest(payload: unknown) {
 async function extractOpenAiText(response: Response) {
   const payload = (await response.json()) as {
     output_text?: string;
-    output?: Array<{ content?: Array<{ text?: string }> }>;
+    output?: Array<{ content?: Array<{ text?: string | { value?: string } }> }>;
   };
 
   return (
     payload.output_text ??
-    payload.output?.flatMap((item) => item.content ?? []).find((item) => item.text)?.text
+    payload.output
+      ?.flatMap((item) => item.content ?? [])
+      .map((item) => (typeof item.text === "string" ? item.text : item.text?.value))
+      .find((text): text is string => Boolean(text))
   );
 }
 
@@ -231,14 +274,31 @@ export function buildOpenAiResponseSchema() {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["type", "objectiveId", "prompt", "choices", "answer", "citations", "difficulty"],
+          required: [
+            "type",
+            "objectiveId",
+            "prompt",
+            "choices",
+            "answer",
+            "sourceChunkIds",
+            "difficulty",
+          ],
           properties: {
             type: { enum: ["multiple_choice"] },
             objectiveId: { type: "string" },
             prompt: { type: "string" },
-            choices: { type: "array", items: { type: "string" } },
+            choices: {
+              type: "array",
+              minItems: 4,
+              maxItems: 4,
+              items: { type: "string" },
+            },
             answer: { type: "string" },
-            citations: citationsSchema(),
+            sourceChunkIds: {
+              type: "array",
+              minItems: 1,
+              items: { type: "string" },
+            },
             difficulty: { enum: ["easy", "medium", "hard"] },
           },
         },
@@ -258,31 +318,18 @@ function buildFlashcardResponseSchema() {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["objectiveId", "front", "back", "citations"],
+          required: ["objectiveId", "front", "back", "sourceChunkIds"],
           properties: {
             objectiveId: { type: "string" },
             front: { type: "string" },
             back: { type: "string" },
-            citations: citationsSchema(),
+            sourceChunkIds: {
+              type: "array",
+              minItems: 1,
+              items: { type: "string" },
+            },
           },
         },
-      },
-    },
-  };
-}
-
-function citationsSchema() {
-  return {
-    type: "array",
-    minItems: 1,
-    items: {
-      type: "object",
-      additionalProperties: false,
-      required: ["url", "title", "headingPath"],
-      properties: {
-        url: { type: "string" },
-        title: { type: "string" },
-        headingPath: { type: "array", minItems: 1, items: { type: "string" } },
       },
     },
   };
@@ -294,7 +341,7 @@ const OpenAiQuestionSchema = z.object({
   prompt: z.string().min(1),
   choices: z.array(z.string()),
   answer: z.string(),
-  citations: z.array(CitationSchema).min(1),
+  sourceChunkIds: z.array(z.string().min(1)).min(1),
   difficulty: z.enum(["easy", "medium", "hard"]),
 });
 
@@ -303,5 +350,12 @@ const AssessmentQuestionResponseSchema = z.object({
 });
 
 const FlashcardResponseSchema = z.object({
-  flashcards: GeneratedAssessmentSchema.shape.flashcards,
+  flashcards: z.array(
+    z.object({
+      objectiveId: z.string().min(1),
+      front: z.string().min(1),
+      back: z.string().min(1),
+      sourceChunkIds: z.array(z.string().min(1)).min(1),
+    }),
+  ),
 });
