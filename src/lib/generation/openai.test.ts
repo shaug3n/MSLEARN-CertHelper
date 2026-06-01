@@ -165,6 +165,46 @@ describe("normalizeOpenAiAssessment", () => {
     });
     expect(assessment.flashcards).toEqual([]);
   });
+
+  it("drops questions that reference unknown objectives and keeps valid generated questions", () => {
+    const assessment = normalizeOpenAiAssessment(
+      {
+        questions: [
+          {
+            type: "multiple_choice",
+            objectiveId: "obj-1",
+            prompt: "Valid question",
+            choices: ["A", "B", "C", "D"],
+            answer: "A",
+            sourceChunkIds: ["chunk-1"],
+            difficulty: "medium",
+          },
+          {
+            type: "multiple_choice",
+            objectiveId: "unknown-objective",
+            prompt: "Invalid question",
+            choices: ["A", "B", "C", "D"],
+            answer: "A",
+            sourceChunkIds: ["chunk-1"],
+            difficulty: "medium",
+          },
+        ],
+      },
+      [
+        {
+          id: "chunk-1",
+          url: "https://learn.microsoft.com/en-us/training/",
+          title: "Microsoft Learn",
+          headingPath: ["Learn"],
+          content: "",
+        },
+      ],
+      new Set(["obj-1"]),
+    );
+
+    expect(assessment.questions).toHaveLength(1);
+    expect(assessment.questions[0].prompt).toBe("Valid question");
+  });
 });
 
 describe("generateAssessment", () => {
@@ -281,5 +321,49 @@ describe("generateAssessment", () => {
         headingPath: ["Workflows"],
       },
     ]);
+  });
+
+  it("tops up invalid OpenAI objective references with deterministic questions", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            output_text: JSON.stringify({
+              questions: Array.from({ length: ASSESSMENT_QUESTION_COUNT }).map((_, index) => ({
+                type: "multiple_choice",
+                objectiveId: index === 0 ? "obj-1" : "wrong-md102-objective",
+                prompt: `Generated question ${index + 1}`,
+                choices: ["A", "B", "C", "D"],
+                answer: "A",
+                sourceChunkIds: ["chunk-1"],
+                difficulty: "medium",
+              })),
+            }),
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    const assessment = await generateAssessment(
+      [{ id: "obj-1", domain: "Endpoint", objective: "Manage devices" }],
+      [
+        {
+          url: "https://learn.microsoft.com/en-us/mem/",
+          title: "Microsoft Intune",
+          headingPath: ["Devices"],
+          content: "Manage devices with Microsoft Intune.",
+        },
+      ],
+    );
+
+    expect(assessment.questions).toHaveLength(ASSESSMENT_QUESTION_COUNT);
+    expect(assessment.questions.every((question) => question.objectiveId === "obj-1")).toBe(true);
+    expect(assessment.questions[0].prompt).toBe("Generated question 1");
   });
 });

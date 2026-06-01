@@ -83,7 +83,14 @@ export async function analyzeStudyGuide(
   }
 
   const assessment = await generateAssessment(objectiveInputs, storedChunks);
-  const balancedQuestions = balanceMultipleChoiceAnswerPositions(assessment.questions);
+  const validObjectiveIds = new Set(objectiveInputs.map((objective) => objective.id));
+  const safeQuestions = assessment.questions.filter((question) =>
+    validObjectiveIds.has(question.objectiveId),
+  );
+  if (safeQuestions.length === 0) {
+    throw new Error("Generated assessment did not include questions for this guide's objectives.");
+  }
+  const balancedQuestions = balanceMultipleChoiceAnswerPositions(safeQuestions);
   await prisma.question.createMany({
     data: balancedQuestions.map((question) => ({
       guideId: guide.id,

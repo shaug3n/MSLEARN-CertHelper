@@ -44,11 +44,41 @@ export async function generateAssessment(
   }
 
   try {
-    return normalizeOpenAiAssessment(JSON.parse(text), sourceChunks);
+    return ensureQuestionCount(
+      normalizeOpenAiAssessment(
+        JSON.parse(text),
+        sourceChunks,
+        new Set(objectives.map((objective) => objective.id)),
+      ),
+      objectives,
+      chunks,
+    );
   } catch (error) {
     console.error("OpenAI response could not be normalized; using fallback.", error);
     return buildMockAssessment(objectives, chunks);
   }
+}
+
+function ensureQuestionCount(
+  assessment: GeneratedAssessment,
+  objectives: ObjectiveWithId[],
+  chunks: SourceChunk[],
+): GeneratedAssessment {
+  if (assessment.questions.length >= ASSESSMENT_QUESTION_COUNT) {
+    return {
+      ...assessment,
+      questions: assessment.questions.slice(0, ASSESSMENT_QUESTION_COUNT),
+    };
+  }
+
+  const fallbackQuestions = buildMockAssessment(objectives, chunks).questions;
+  return {
+    ...assessment,
+    questions: [
+      ...assessment.questions,
+      ...fallbackQuestions.slice(0, ASSESSMENT_QUESTION_COUNT - assessment.questions.length),
+    ],
+  };
 }
 
 export async function generateFlashcards(
@@ -88,18 +118,21 @@ export async function generateFlashcards(
 export function normalizeOpenAiAssessment(
   payload: unknown,
   sourceChunks: CompactSourceChunk[],
+  validObjectiveIds?: Set<string>,
 ): GeneratedAssessment {
   const raw = AssessmentQuestionResponseSchema.parse(payload);
   return GeneratedAssessmentSchema.parse({
-    questions: raw.questions.map((question) => ({
-      type: question.type,
-      objectiveId: question.objectiveId,
-      prompt: question.prompt,
-      choices: question.choices,
-      answer: question.answer,
-      citations: mapSourceChunkIdsToCitations(question.sourceChunkIds, sourceChunks),
-      difficulty: question.difficulty,
-    })),
+    questions: raw.questions
+      .filter((question) => !validObjectiveIds || validObjectiveIds.has(question.objectiveId))
+      .map((question) => ({
+        type: question.type,
+        objectiveId: question.objectiveId,
+        prompt: question.prompt,
+        choices: question.choices,
+        answer: question.answer,
+        citations: mapSourceChunkIdsToCitations(question.sourceChunkIds, sourceChunks),
+        difficulty: question.difficulty,
+      })),
     flashcards: [],
   });
 }
