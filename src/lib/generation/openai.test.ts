@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ASSESSMENT_QUESTION_COUNT,
   OPENAI_ASSESSMENT_SYSTEM_PROMPT,
+  OPENAI_FLASHCARDS_SYSTEM_PROMPT,
   buildOpenAiRequestPayload,
+  buildOpenAiFlashcardRequestPayload,
   generateAssessment,
   buildOpenAiResponseSchema,
   normalizeOpenAiAssessment,
@@ -38,6 +40,7 @@ describe("buildOpenAiRequestPayload", () => {
     const payload = buildOpenAiRequestPayload([], []);
 
     expect(OPENAI_ASSESSMENT_SYSTEM_PROMPT).toContain("multiple-choice");
+    expect(OPENAI_ASSESSMENT_SYSTEM_PROMPT).not.toContain("flashcards");
     expect(payload.input[1].content).toContain(`"questionCount":${ASSESSMENT_QUESTION_COUNT}`);
     expect(payload.input[1].content).toContain('"requiredQuestionTypes":["multiple_choice"]');
   });
@@ -57,50 +60,63 @@ describe("buildOpenAiRequestPayload", () => {
 
     expect(payload.max_output_tokens).toBe(8000);
     expect(userInput).toContain('"sourceChunks"');
+    expect(userInput).toContain('"id":"chunk-1"');
     expect(userInput).not.toContain("A".repeat(900));
     expect(userInput).toContain("A".repeat(480));
     expect(userInput).not.toContain('"url":"https://learn.microsoft.com/24"');
   });
+
+  it("builds a separate flashcard payload for on-demand study generation", () => {
+    const payload = buildOpenAiFlashcardRequestPayload(
+      [{ id: "obj-1", domain: "Actions", objective: "Describe workflows" }],
+      [
+        {
+          url: "https://learn.microsoft.com/en-us/actions",
+          title: "GitHub Actions",
+          headingPath: ["Workflows"],
+          content: "A workflow is a configurable automated process.",
+        },
+      ],
+    );
+
+    expect(OPENAI_FLASHCARDS_SYSTEM_PROMPT).toContain("flashcards");
+    expect(payload.input[1].content).toContain('"objectiveCount":1');
+  });
 });
 
 describe("normalizeOpenAiAssessment", () => {
-  it("normalizes flat OpenAI questions into app question variants", () => {
-    const assessment = normalizeOpenAiAssessment({
-      questions: [
+  it("normalizes source chunk references into stored citations without flashcards", () => {
+    const assessment = normalizeOpenAiAssessment(
+      {
+        questions: [
+          {
+            type: "multiple_choice",
+            objectiveId: "obj-1",
+            prompt: "What is GitHub flow?",
+            choices: ["A branch and pull request workflow", "A billing dashboard"],
+            answer: "A branch and pull request workflow",
+            sourceChunkIds: ["chunk-2"],
+            difficulty: "medium",
+          },
+        ],
+      },
+      [
         {
-          type: "multiple_choice",
-          objectiveId: "obj-1",
-          prompt: "What is GitHub flow?",
-          choices: ["A branch and pull request workflow", "A billing dashboard"],
-          answer: "A branch and pull request workflow",
-          orderedAnswer: [],
-          expectedAnswer: "",
-          rubric: "",
-          citations: [
-            {
-              url: "https://learn.microsoft.com/en-us/training/",
-              title: "Microsoft Learn",
-              headingPath: ["GitHub flow"],
-            },
-          ],
-          difficulty: "medium",
+          id: "chunk-1",
+          url: "https://learn.microsoft.com/en-us/training/",
+          title: "Microsoft Learn",
+          headingPath: ["Ignored"],
+          content: "",
+        },
+        {
+          id: "chunk-2",
+          url: "https://learn.microsoft.com/en-us/training/modules/github-flow/",
+          title: "GitHub flow",
+          headingPath: ["GitHub flow"],
+          content: "",
         },
       ],
-      flashcards: [
-        {
-          objectiveId: "obj-1",
-          front: "What is GitHub flow?",
-          back: "A branch and pull request collaboration workflow.",
-          citations: [
-            {
-              url: "https://learn.microsoft.com/en-us/training/",
-              title: "Microsoft Learn",
-              headingPath: ["GitHub flow"],
-            },
-          ],
-        },
-      ],
-    });
+    );
 
     expect(assessment.questions[0]).toEqual({
       type: "multiple_choice",
@@ -110,13 +126,14 @@ describe("normalizeOpenAiAssessment", () => {
       answer: "A branch and pull request workflow",
       citations: [
         {
-          url: "https://learn.microsoft.com/en-us/training/",
-          title: "Microsoft Learn",
+          url: "https://learn.microsoft.com/en-us/training/modules/github-flow/",
+          title: "GitHub flow",
           headingPath: ["GitHub flow"],
         },
       ],
       difficulty: "medium",
     });
+    expect(assessment.flashcards).toEqual([]);
   });
 });
 
@@ -169,5 +186,70 @@ describe("generateAssessment", () => {
         ],
       ),
     ).rejects.toThrow("OpenAI generation failed: 401");
+  });
+
+  it("uses real OpenAI output instead of fallback when the model returns source chunk ids", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            output: [
+              {
+                content: [
+                  {
+                    type: "output_text",
+                    text: JSON.stringify({
+                      questions: Array.from({ length: ASSESSMENT_QUESTION_COUNT }).map(
+                        (_, index) => ({
+                          type: "multiple_choice",
+                          objectiveId: "obj-1",
+                          prompt: `Generated question ${index + 1}`,
+                          choices: ["A", "B", "C", "D"],
+                          answer: "B",
+                          sourceChunkIds: ["chunk-1"],
+                          difficulty: "medium",
+                        }),
+                      ),
+                    }),
+                  },
+                ],
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    const assessment = await generateAssessment(
+      [{ id: "obj-1", domain: "Actions", objective: "Describe workflows" }],
+      [
+        {
+          url: "https://learn.microsoft.com/en-us/actions",
+          title: "GitHub Actions",
+          headingPath: ["Workflows"],
+          content: "A workflow is a configurable automated process.",
+        },
+      ],
+    );
+
+    expect(assessment.questions[0].prompt).toBe("Generated question 1");
+    expect(assessment.questions[0].type).toBe("multiple_choice");
+    if (assessment.questions[0].type !== "multiple_choice") {
+      throw new Error("Expected a multiple-choice question");
+    }
+    expect(assessment.questions[0].answer).toBe("B");
+    expect(assessment.questions[0].citations).toEqual([
+      {
+        url: "https://learn.microsoft.com/en-us/actions",
+        title: "GitHub Actions",
+        headingPath: ["Workflows"],
+      },
+    ]);
   });
 });

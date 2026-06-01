@@ -47,14 +47,19 @@ export function buildMockAssessment(
     };
   });
 
-  const flashcards: GeneratedFlashcard[] = safeObjectives.map((objective, index) => ({
+  return { questions, flashcards: [] };
+}
+
+export function buildMockFlashcards(
+  objectives: ObjectiveWithId[],
+  chunks: SourceChunk[],
+): GeneratedFlashcard[] {
+  return objectives.map((objective, index) => ({
     objectiveId: objective.id,
     front: `Active recall: ${objective.objective}`,
     back: `State the key facts for ${objective.objective}, then compare with the cited source.`,
     citations: [pickCitation(chunks, index)],
   }));
-
-  return { questions, flashcards };
 }
 
 export function buildRemediationPacks(
