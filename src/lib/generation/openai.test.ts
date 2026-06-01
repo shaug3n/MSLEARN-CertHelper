@@ -34,6 +34,26 @@ describe("buildOpenAiRequestPayload", () => {
     expect(payload.input[1].content).toContain(`"questionCount":${ASSESSMENT_QUESTION_COUNT}`);
     expect(payload.input[1].content).toContain('"requiredQuestionTypes":["multiple_choice"]');
   });
+
+  it("compacts source chunks to reduce hosted inference latency", () => {
+    const payload = buildOpenAiRequestPayload(
+      [{ id: "obj-1", domain: "Actions", objective: "Describe workflows" }],
+      Array.from({ length: 25 }).map((_, index) => ({
+        url: `https://learn.microsoft.com/${index}`,
+        title: `Doc ${index}`,
+        headingPath: ["Actions", `Heading ${index}`],
+        content: "A".repeat(900),
+      })),
+    );
+
+    const userInput = payload.input[1].content;
+
+    expect(payload.max_output_tokens).toBe(8000);
+    expect(userInput).toContain('"sourceChunks"');
+    expect(userInput).not.toContain("A".repeat(900));
+    expect(userInput).toContain("A".repeat(480));
+    expect(userInput).not.toContain('"url":"https://learn.microsoft.com/24"');
+  });
 });
 
 describe("normalizeOpenAiAssessment", () => {

@@ -10,6 +10,7 @@ import { reviewFlashcard, type ReviewRating } from "@/lib/srs/sm2";
 import type { Citation, GradedResult, SourceChunk } from "@/lib/types";
 
 const MAX_LINKED_PAGES = 6;
+const SOURCE_FETCH_TIMEOUT_MS = 12_000;
 
 type FetchHtml = (url: string) => Promise<string>;
 
@@ -318,27 +319,41 @@ async function loadSourcePages(
   links: Array<{ title: string; url: string }>,
   fetchHtml: FetchHtml,
 ) {
-  const pages: Array<{ title: string; url: string; chunks: SourceChunk[] }> = [];
-
-  for (const link of links.slice(0, MAX_LINKED_PAGES)) {
-    try {
-      const html = await fetchHtml(link.url);
-      const chunks = chunkSourcePage(link.url, html);
-      if (chunks.length > 0) {
-        pages.push({ title: chunks[0].title || link.title, url: link.url, chunks });
+  const results = await Promise.all(
+    links.slice(0, MAX_LINKED_PAGES).map(async (link) => {
+      try {
+        const html = await fetchHtml(link.url);
+        const chunks = chunkSourcePage(link.url, html);
+        if (chunks.length === 0) return null;
+        return { title: chunks[0].title || link.title, url: link.url, chunks };
+      } catch {
+        return null;
       }
-    } catch {
-      continue;
-    }
-  }
+    }),
+  );
 
-  return pages;
+  return results.filter((page): page is { title: string; url: string; chunks: SourceChunk[] } =>
+    Boolean(page),
+  );
 }
 
 async function fetchHtmlFromWeb(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: { "User-Agent": "MS Certification Helper MVP" },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SOURCE_FETCH_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { "User-Agent": "MS Certification Helper MVP" },
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Timed out fetching ${url}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new Error(`Could not fetch ${url}: ${response.status}`);
   }

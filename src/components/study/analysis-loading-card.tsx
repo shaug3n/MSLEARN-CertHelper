@@ -15,7 +15,7 @@ export function AnalysisLoadingCard() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       setQuoteIndex((current) => (current + 1) % analysisQuotes.length);
-    }, 2200);
+    }, 30_000);
 
     return () => window.clearInterval(interval);
   }, []);
